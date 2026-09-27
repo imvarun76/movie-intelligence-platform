@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalMovie",
+  "type": "object",
+  "required": [
+    "movie_id",
+    "title"
+  ],
+  "properties": {
+    "movie_id": {
+      "type": "integer"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_year": {
+      "type": ["integer", "null"]
+    },
+    "runtime_minutes": {
+      "type": ["integer", "null"]
+    },
+    "original_language": {
+      "type": ["string", "null"]
+    },
+    "languages": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "genres": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "overview": {
+      "type": ["string", "null"]
+    },
+    "cast": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "directors": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "keywords": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "poster_url": {
+      "type": ["string", "null"]
+    },
+
+    "imdb_rating": {
+      "type": ["number", "null"]
+    },
+    "imdb_votes": {
+      "type": ["integer", "null"]
+    },
+    "rt_tomatometer": {
+      "type": ["number", "null"]
+    },
+    "rt_popcornmeter": {
+      "type": ["number", "null"]
+    },
+    "metacritic_score": {
+      "type": ["number", "null"]
+    },
+    "metacritic_user_score": {
+      "type": ["number", "null"]
+    },
+    "tmdb_rating": {
+      "type": ["number", "null"]
+    },
+    "trakt_rating": {
+      "type": ["number", "null"]
+    },
+
+    "source_last_updated": {
+      "type": ["string", "null"]
+    }
+  }
+}

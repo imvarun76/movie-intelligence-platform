@@ -7,7 +7,7 @@ from alembic import context
 
 from backend.app.core.config import settings
 from backend.app.models.base import Base
-from backend.app.models import Interaction, Movie, User
+from backend.app.models import Interaction, Movie, MovieExternalID, User
 
 
 config = context.config
