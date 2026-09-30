@@ -64,9 +64,9 @@ class TMDBClient:
 
     async def __aenter__(self) -> "TMDBClient":
         self._client = httpx.AsyncClient(
-            transport=_IPV4_TRANSPORT,
             timeout=httpx.Timeout(30.0),
             base_url=_TMDB_BASE,
+            headers={"User-Agent": "ShowDyme-Movie-Intelligence/1.0"},
         )
         return self
 
