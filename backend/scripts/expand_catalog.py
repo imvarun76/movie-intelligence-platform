@@ -30,10 +30,10 @@ async def expand_catalog(concurrency: int = 12):
     async with TMDBClient(api_key) as client:
         all_movie_ids = set()
 
-        # 1. Popular movies (Pages 1 to 15 = ~300 movies)
-        print("--- Fetching Discover: Popularity (Pages 1-15) ---")
+        # 1. Popular movies (Pages 1-30 = ~600 movies)
+        print("--- Fetching Discover: Popularity (Pages 1-30) ---")
         pop_movies = await client.paginate_discover(
-            max_pages=15,
+            max_pages=30,
             sort_by="popularity.desc",
             primary_release_date_lte="2026-10-01",
         )
@@ -41,10 +41,10 @@ async def expand_catalog(concurrency: int = 12):
             if m.get("id"):
                 all_movie_ids.add(m["id"])
 
-        # 2. Critically acclaimed classics & award-winners (vote_count >= 500)
-        print("--- Fetching Discover: Top Rated (Pages 1-8) ---")
+        # 2. Critically acclaimed all-time classics (Pages 1-25 = ~500 movies)
+        print("--- Fetching Discover: Top Rated (Pages 1-25) ---")
         rated_movies = await client.paginate_discover(
-            max_pages=8,
+            max_pages=25,
             sort_by="vote_average.desc",
             primary_release_date_lte="2026-10-01",
             **{"vote_count.gte": 500},
@@ -53,15 +53,37 @@ async def expand_catalog(concurrency: int = 12):
             if m.get("id"):
                 all_movie_ids.add(m["id"])
 
-        # 3. Modern Releases (2024-2026)
-        print("--- Fetching Discover: Modern 2024-2026 Releases (Pages 1-8) ---")
+        # 3. Modern Releases (2024-2026, Pages 1-15 = ~300 movies)
+        print("--- Fetching Discover: Modern 2024-2026 Releases (Pages 1-15) ---")
         recent_movies = await client.paginate_discover(
-            max_pages=8,
+            max_pages=15,
             sort_by="popularity.desc",
             primary_release_date_lte="2026-10-01",
             **{"primary_release_date.gte": "2024-01-01"},
         )
         for m in recent_movies:
+            if m.get("id"):
+                all_movie_ids.add(m["id"])
+
+        # 4. Dedicated Horror & Thriller Curation (Genre IDs: 27=Horror, 53=Thriller)
+        print("--- Fetching Discover: Horror & Thriller (Pages 1-15) ---")
+        horror_movies = await client.paginate_discover(
+            max_pages=15,
+            sort_by="vote_average.desc",
+            **{"with_genres": "27", "vote_count.gte": 150},
+        )
+        for m in horror_movies:
+            if m.get("id"):
+                all_movie_ids.add(m["id"])
+
+        # 5. Dedicated Sci-Fi & Mind-Bending Curation (Genre ID: 878=Sci-Fi)
+        print("--- Fetching Discover: Sci-Fi & Speculative (Pages 1-15) ---")
+        scifi_movies = await client.paginate_discover(
+            max_pages=15,
+            sort_by="vote_average.desc",
+            **{"with_genres": "878", "vote_count.gte": 200},
+        )
+        for m in scifi_movies:
             if m.get("id"):
                 all_movie_ids.add(m["id"])
 

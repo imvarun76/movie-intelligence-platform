@@ -832,3 +832,302 @@
   z-index: 1000;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
 }
+
+/* ── User Account & Persona Button ── */
+.user-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(212, 163, 89, 0.35);
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--text-pure);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.user-profile-btn:hover {
+  background: rgba(212, 163, 89, 0.12);
+  border-color: var(--accent-gold);
+}
+
+.user-avatar-icon {
+  font-size: 0.85rem;
+}
+
+.user-name-text {
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.05em;
+}
+
+.user-tier-pill {
+  background: rgba(212, 163, 89, 0.2);
+  color: var(--accent-gold);
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.user-caret {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ── Account Switcher / Register Modal ── */
+.account-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.account-modal-box {
+  background: #0d0d10;
+  border: 1px solid var(--border-light);
+  width: 100%;
+  max-width: 520px;
+  padding: 32px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.95);
+  position: relative;
+}
+
+.account-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-line);
+  padding-bottom: 16px;
+}
+
+.account-modal-title {
+  font-family: var(--font-serif);
+  font-size: 1.8rem;
+  color: var(--text-pure);
+}
+
+.account-input-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.account-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-line);
+  color: #fff;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.account-input:focus {
+  border-color: var(--accent-gold);
+}
+
+.personas-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.persona-item-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--border-line);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.persona-item-card:hover {
+  background: rgba(212, 163, 89, 0.08);
+  border-color: rgba(212, 163, 89, 0.4);
+}
+
+.persona-item-card.active-user {
+  border-color: var(--accent-gold);
+  background: rgba(212, 163, 89, 0.12);
+}
+
+/* ── Archive Filter Bar ── */
+.archive-filter-bar {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0 28px 0;
+  border-bottom: 1px solid var(--border-line);
+  padding-bottom: 14px;
+}
+
+.archive-filter-pill {
+  background: none;
+  border: 1px solid var(--border-line);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 6px 14px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: all var(--transition-fast);
+}
+
+.archive-filter-pill:hover {
+  color: var(--text-pure);
+  border-color: var(--border-light);
+}
+
+.archive-filter-pill.active {
+  background: rgba(212, 163, 89, 0.15);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+/* ── AI Curator Grounded RAG Styles ── */
+.curator-taste-banner {
+  background: rgba(212, 163, 89, 0.08);
+  border-left: 2px solid var(--accent-gold);
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent-gold);
+  letter-spacing: 0.06em;
+  margin-bottom: 16px;
+}
+
+.curator-bubble-text {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: #e5e5e5;
+  margin-bottom: 14px;
+}
+
+.curator-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.curator-card {
+  border: 1px solid var(--border-line);
+  background: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+}
+
+.curator-card:hover {
+  border-color: var(--accent-gold);
+  transform: translateY(-2px);
+}
+
+.curator-card-poster {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+}
+
+.curator-card-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.curator-card-title {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  color: var(--text-pure);
+  line-height: 1.2;
+}
+
+.curator-card-rationale {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #a7f3d0;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.curator-quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.curator-quick-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-line);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.curator-quick-pill:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  background: rgba(212, 163, 89, 0.1);
+}
+
+/* ── ML Explainer Cards ── */
+.ml-explainer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.ml-card {
+  border: 1px solid var(--border-line);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ml-card-title {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  color: var(--accent-gold);
+}
+
+.ml-math-formula {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(212, 163, 89, 0.3);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  color: #fce7f3;
+  border-radius: 2px;
+}
+

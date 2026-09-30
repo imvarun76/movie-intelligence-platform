@@ -55,6 +55,23 @@ class UserInsights(BaseModel):
     recent_activity: list[dict[str, Any]]
 
 
+class ArchiveItem(BaseModel):
+    movie_id: int
+    title: str
+    release_year: int | None = None
+    genres: list[str] | None = None
+    runtime_minutes: int | None = None
+    poster_path: str | None = None
+    backdrop_path: str | None = None
+    tmdb_rating: float | None = None
+    overview: str | None = None
+    status: str  # "watched", "liked", "watchlist"
+    is_watched: bool = False
+    is_liked: bool = False
+    is_watchlist: bool = False
+    interacted_at: str
+
+
 @router.post("", response_model=InteractionResponse)
 async def record_interaction(
     payload: InteractionCreate,
@@ -194,3 +211,85 @@ async def get_user_insights(
         top_genres=top_genres,
         recent_activity=recent_activity,
     )
+
+
+@router.get("/user/{user_id}/archive", response_model=list[ArchiveItem])
+async def get_user_archive(
+    user_id: uuid.UUID,
+    db: DBSession,
+    filter_type: str | None = None,  # "all", "watched", "liked", "watchlist"
+) -> Any:
+    """
+    Retrieve all movies in user's personal archive, strictly deduplicated by movie.
+    """
+    stmt = (
+        select(Interaction, Movie)
+        .join(Movie, Interaction.movie_id == Movie.id)
+        .where(Interaction.user_id == user_id)
+        .order_by(Interaction.occurred_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # Deduplicate by movie ID while aggregating status
+    movie_dict: dict[int, dict[str, Any]] = {}
+    for inter, movie in rows:
+        mid = movie.id
+        if mid not in movie_dict:
+            movie_dict[mid] = {
+                "movie": movie,
+                "latest_status": inter.event_type,
+                "is_watched": inter.event_type == "watched",
+                "is_liked": inter.event_type == "liked",
+                "is_watchlist": inter.event_type == "watchlist",
+                "latest_at": inter.occurred_at.isoformat(),
+            }
+        else:
+            if inter.event_type == "watched":
+                movie_dict[mid]["is_watched"] = True
+                movie_dict[mid]["latest_status"] = "watched"
+            elif inter.event_type == "liked":
+                movie_dict[mid]["is_liked"] = True
+            elif inter.event_type == "watchlist":
+                movie_dict[mid]["is_watchlist"] = True
+
+    items: list[ArchiveItem] = []
+    for mid, data in movie_dict.items():
+        m: Movie = data["movie"]
+        status = data["latest_status"]
+        if data["is_watched"]:
+            status = "watched"
+        elif data["is_liked"]:
+            status = "liked"
+        elif data["is_watchlist"]:
+            status = "watchlist"
+
+        if filter_type:
+            ft = filter_type.lower()
+            if ft == "watched" and not data["is_watched"]:
+                continue
+            if ft == "liked" and not data["is_liked"]:
+                continue
+            if ft == "watchlist" and not data["is_watchlist"]:
+                continue
+
+        items.append(
+            ArchiveItem(
+                movie_id=m.id,
+                title=m.title,
+                release_year=m.release_year,
+                genres=m.genres,
+                runtime_minutes=m.runtime_minutes,
+                poster_path=m.poster_path,
+                backdrop_path=m.backdrop_path,
+                tmdb_rating=m.tmdb_rating,
+                overview=m.overview,
+                status=status,
+                is_watched=data["is_watched"],
+                is_liked=data["is_liked"],
+                is_watchlist=data["is_watchlist"],
+                interacted_at=data["latest_at"],
+            )
+        )
+
+    return items
+

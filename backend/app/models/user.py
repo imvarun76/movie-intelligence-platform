@@ -17,6 +17,13 @@ class User(Base):
         default=uuid.uuid4,
     )
 
+    username: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
     interaction_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
