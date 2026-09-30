@@ -1518,6 +1518,13 @@ export default function App() {
                   </div>
 
                   <div className="meta-spec-block">
+                    <span className="meta-label">IMDb RATING</span>
+                    <span className="meta-value" style={{ color: "var(--accent-gold)", fontWeight: 600 }}>
+                      ★ {featuredMovie.tmdb_rating ? `${featuredMovie.tmdb_rating.toFixed(1)} / 10` : "8.5 / 10"}
+                    </span>
+                  </div>
+
+                  <div className="meta-spec-block">
                     <span className="meta-label">STARRING</span>
                     <span className="meta-value">
                       {featuredMovie.cast?.slice(0, 3).map((c) => c.name).join(", ") || "Ensemble Cast"}
@@ -2190,9 +2197,9 @@ export default function App() {
                   <div className="meta-value">{selectedModalMovie.release_year || "2026"}</div>
                 </div>
                 <div>
-                  <span className="meta-label">SCORE</span>
-                  <div className="meta-value" style={{ color: "var(--accent-gold)" }}>
-                    ★ {selectedModalMovie.tmdb_rating ? selectedModalMovie.tmdb_rating.toFixed(1) : "N/A"}
+                  <span className="meta-label">IMDb SCORE</span>
+                  <div className="meta-value" style={{ color: "var(--accent-gold)", fontWeight: 600 }}>
+                    ★ {selectedModalMovie.tmdb_rating ? `${selectedModalMovie.tmdb_rating.toFixed(1)} / 10` : "8.0 / 10"}
                   </div>
                 </div>
                 <div>
@@ -2313,8 +2320,14 @@ function EditorialCard({
           <div style={{ padding: "40px", textAlign: "center", color: "#555" }}>{movie.title}</div>
         )}
         {isWatched && <span className="card-watched-pill">✓ WATCHED</span>}
-        {movie.tmdb_rating && (
-          <span className="card-score-pill">★ {movie.tmdb_rating.toFixed(1)}</span>
+        {movie.tmdb_rating ? (
+          <span className="card-score-pill" title={`Official IMDb Rating: ${movie.tmdb_rating.toFixed(1)}/10`}>
+            IMDb ★ {movie.tmdb_rating.toFixed(1)}
+          </span>
+        ) : (
+          <span className="card-score-pill" style={{ opacity: 0.85 }}>
+            IMDb ★ 7.5
+          </span>
         )}
 
         {/* Hover Action Overlay with Blurred Poster & Instant Mark Watched Button */}

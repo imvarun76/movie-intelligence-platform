@@ -44,6 +44,7 @@ data/quarantine/*
 !data/quarantine/.gitkeep
 data/*.db
 data/mlruns/
+backend/data/
 
 # Python tooling
 *.egg-info/

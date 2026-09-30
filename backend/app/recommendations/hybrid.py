@@ -157,15 +157,16 @@ class HybridRanker:
             score_dict[mid] += w_collab * item["score"]
             reasons_dict[mid] = item["reason"]
 
-        # Sort blended scores
+        # Sort blended scores with IMDb rating quality weighting
         blended = [
             {
                 "movie": movie_dict[mid],
-                "score": round(score, 4),
+                "score": round(score * (((movie_dict[mid].tmdb_rating or 7.0) / 10.0) ** 1.8), 4),
                 "strategy": f"hybrid_{tier}",
                 "reason": reasons_dict.get(mid, "Recommended for you"),
             }
             for mid, score in score_dict.items()
+            if (movie_dict[mid].tmdb_rating or 0) >= 6.8
         ]
         blended.sort(key=lambda x: x["score"], reverse=True)
 

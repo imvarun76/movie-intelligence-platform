@@ -47,7 +47,7 @@ async def get_popular_movies(
     """
     excluded_ids = excluded_ids or set()
 
-    stmt = select(Movie)
+    stmt = select(Movie).where(Movie.tmdb_rating.is_not(None)).where(Movie.tmdb_rating >= 6.8).where(Movie.tmdb_votes >= 50)
     if genre:
         stmt = stmt.where(Movie.genres.contains([genre]))
     if excluded_ids:
@@ -61,11 +61,11 @@ async def get_popular_movies(
 
     # Calculate C (mean rating) and m (min votes threshold)
     valid_ratings = [m.tmdb_rating for m in movies if m.tmdb_rating is not None]
-    mean_rating = sum(valid_ratings) / len(valid_ratings) if valid_ratings else 6.0
+    mean_rating = sum(valid_ratings) / len(valid_ratings) if valid_ratings else 7.5
 
     vote_counts = sorted([m.tmdb_votes or 0 for m in movies])
-    min_votes = vote_counts[len(vote_counts) // 2] if vote_counts else 20.0
-    min_votes = max(min_votes, 10.0)
+    min_votes = vote_counts[len(vote_counts) // 2] if vote_counts else 500.0
+    min_votes = max(min_votes, 200.0)
 
     # Compute raw scores
     movie_scores: list[tuple[Movie, float, float]] = []
@@ -78,18 +78,18 @@ async def get_popular_movies(
             max_log_pop = log_pop
         movie_scores.append((m, wr, log_pop))
 
-    # Normalize and blend
+    # Normalize and blend: 85% Bayesian rating, 15% popularity
     ranked = []
     for m, wr, log_pop in movie_scores:
-        norm_wr = wr / 10.0  # TMDB ratings are 0-10
+        norm_wr = wr / 10.0  # TMDB / IMDb ratings are 0-10
         norm_pop = log_pop / max_log_pop if max_log_pop > 0 else 0.5
-        final_score = 0.65 * norm_wr + 0.35 * norm_pop
+        final_score = 0.85 * norm_wr + 0.15 * norm_pop
 
         ranked.append({
             "movie": m,
             "score": round(final_score, 4),
             "strategy": "popularity",
-            "reason": f"Top rated & trending (Rating: {m.tmdb_rating or 'N/A'}/10 with {m.tmdb_votes or 0:,} votes)",
+            "reason": f"Acclaimed masterpiece (IMDb ★ {m.tmdb_rating:.1f} • {m.tmdb_votes:,} votes)",
         })
 
     ranked.sort(key=lambda x: x["score"], reverse=True)

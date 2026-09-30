@@ -901,14 +901,20 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(9, 10, 13, 0.85);
-  backdrop-filter: blur(4px);
-  padding: 2px 6px;
-  border: 1px solid var(--border-line);
+  background: rgba(9, 10, 13, 0.88);
+  backdrop-filter: blur(6px);
+  padding: 3px 7px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
   color: var(--accent-gold);
   z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .card-meta-wrap {

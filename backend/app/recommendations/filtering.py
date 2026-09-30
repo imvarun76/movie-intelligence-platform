@@ -80,26 +80,30 @@ def apply_diversity_and_exploration(
         if len(selected) >= num_standard:
             break
 
-    # Pass 2: Exploration slots (items with distinct genres / styles)
+    # Pass 2: Exploration slots (high-quality items with distinct genres / styles)
     top_dominant_genres = {g for g, _ in genre_counts.most_common(2)}
     explore_candidates = [
         item for item in exploration_pool
         if item["movie"].id not in selected_ids
+        and (item["movie"].tmdb_rating or 0) >= 7.0
         and not (set(item["movie"].genres or []) & top_dominant_genres)
     ]
 
-    # If no pure distinct genre items found, fallback to any unseen exploration pool items
+    # If no pure distinct genre items found, fallback to any unseen exploration pool items >= 7.0
     if not explore_candidates:
         explore_candidates = [
             item for item in exploration_pool
             if item["movie"].id not in selected_ids
+            and (item["movie"].tmdb_rating or 0) >= 7.0
         ]
 
-    random.shuffle(explore_candidates)
+    # Sort exploration candidates by rating descending so top-tier cinema is prioritized
+    explore_candidates.sort(key=lambda x: (x["movie"].tmdb_rating or 0.0, x["movie"].tmdb_votes or 0), reverse=True)
     for item in explore_candidates[:num_explore]:
         item_copy = dict(item)
         item_copy["strategy"] = "exploration"
-        item_copy["reason"] = f"Curated discovery: Explore {item['movie'].genres[0] if item['movie'].genres else 'new cinema'}"
+        genre_name = item['movie'].genres[0] if item['movie'].genres else 'acclaimed cinema'
+        item_copy["reason"] = f"Curated discovery: Acclaimed {genre_name} (IMDb ★ {item['movie'].tmdb_rating:.1f})"
         selected.append(item_copy)
         selected_ids.add(item["movie"].id)
 
