@@ -117,12 +117,16 @@ async def _upsert_movie(session: AsyncSession, record: dict[str, Any]) -> int:
     return movie_id
 
 
-async def sync_silver_to_gold(silver_dir: Path = SILVER_DIR) -> tuple[int, int]:
+async def sync_silver_to_gold(
+    silver_dir: Path = SILVER_DIR,
+    session_factory: Any = None,
+) -> tuple[int, int]:
     """
     Load all Silver TMDB records and sync to PostgreSQL.
 
     Returns (inserted, updated) counts.
     """
+    factory = session_factory or async_session_factory
     silver_files = sorted(silver_dir.glob("*.json"))
     total = len(silver_files)
     logger.info("Gold sync: %d Silver records to process", total)
@@ -130,7 +134,7 @@ async def sync_silver_to_gold(silver_dir: Path = SILVER_DIR) -> tuple[int, int]:
     inserted = 0
     updated = 0
 
-    async with async_session_factory() as session:
+    async with factory() as session:
         for i, path in enumerate(silver_files):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
@@ -148,10 +152,10 @@ async def sync_silver_to_gold(silver_dir: Path = SILVER_DIR) -> tuple[int, int]:
                 await session.rollback()
                 continue
 
-            # Batch commit
-            if (i + 1) % BATCH_SIZE == 0:
+            # Batch commit and progress every 50 movies
+            if (i + 1) % 50 == 0 or (i + 1) == total:
                 await session.commit()
-                logger.info("Committed batch at %d/%d", i + 1, total)
+                print(f"   🎬 Ingested {i + 1}/{total} movies...", flush=True)
 
         await session.commit()
 
