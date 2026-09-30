@@ -231,6 +231,38 @@ export default function App() {
   const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([]);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
 
+  // Fast map of user interactions for active button highlighting & tick marks
+  const userInteractionsMap = useMemo(() => {
+    const map: Record<number, { is_watched: boolean; is_liked: boolean; is_disliked: boolean; is_watchlist: boolean }> = {};
+    for (const item of archiveItems) {
+      map[item.movie_id] = {
+        is_watched: Boolean(item.is_watched || item.status === "watched"),
+        is_liked: Boolean(item.is_liked || item.status === "liked"),
+        is_disliked: item.status === "disliked",
+        is_watchlist: Boolean(item.is_watchlist || item.status === "watchlist"),
+      };
+    }
+    if (insights?.recent_activity) {
+      for (const act of insights.recent_activity) {
+        if (!map[act.movie_id]) {
+          map[act.movie_id] = {
+            is_watched: act.event_type === "watched",
+            is_liked: act.event_type === "liked",
+            is_disliked: act.event_type === "disliked",
+            is_watchlist: act.event_type === "watchlist",
+          };
+        } else {
+          if (act.event_type === "watched") map[act.movie_id].is_watched = true;
+          if (act.event_type === "liked") map[act.movie_id].is_liked = true;
+          if (act.event_type === "disliked") map[act.movie_id].is_disliked = true;
+          if (act.event_type === "watchlist") map[act.movie_id].is_watchlist = true;
+        }
+      }
+    }
+    return map;
+  }, [archiveItems, insights]);
+
+
   // Explore filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
@@ -632,6 +664,41 @@ export default function App() {
       setAuthView("login");
       return;
     }
+
+    // Optimistically update archiveItems so the button highlights with a tick immediately
+    setArchiveItems((prev) => {
+      const idx = prev.findIndex((item) => item.movie_id === movieId);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          is_watched: eventType === "watched" ? true : updated[idx].is_watched,
+          is_liked: eventType === "liked" ? true : updated[idx].is_liked,
+          is_watchlist: eventType === "watchlist" ? true : updated[idx].is_watchlist,
+          status: eventType,
+        };
+        return updated;
+      }
+      const m = catalog.find((c) => c.id === movieId) || (featuredMovie?.id === movieId ? featuredMovie : null) || (selectedModalMovie?.id === movieId ? selectedModalMovie : null);
+      const newItem: ArchiveItem = {
+        movie_id: movieId,
+        title: m?.title || "Movie",
+        release_year: m?.release_year || 2026,
+        genres: m?.genres || [],
+        runtime_minutes: m?.runtime_minutes || null,
+        poster_path: m?.poster_path || null,
+        backdrop_path: m?.backdrop_path || null,
+        tmdb_rating: m?.tmdb_rating || null,
+        overview: m?.overview || null,
+        status: eventType,
+        is_watched: eventType === "watched",
+        is_liked: eventType === "liked",
+        is_watchlist: eventType === "watchlist",
+        interacted_at: new Date().toISOString(),
+      };
+      return [newItem, ...prev];
+    });
+
     try {
       const res = await authFetch(`${API_BASE}/api/v1/interactions`, {
         method: "POST",
@@ -659,6 +726,7 @@ export default function App() {
       showToast("Failed to record interaction");
     }
   };
+
 
   // Explore search & filter
   useEffect(() => {
@@ -1277,7 +1345,12 @@ export default function App() {
                   setActiveTab("films");
                 }}
               >
-                <span className="index-item-title">{film.title}</span>
+                <span className="index-item-title">
+                  {userInteractionsMap[film.id]?.is_watched && (
+                    <span style={{ color: "var(--accent-gold)", marginRight: "6px", fontWeight: "bold" }}>✓</span>
+                  )}
+                  {film.title}
+                </span>
                 <span className="index-item-year">{film.release_year || "2026"}</span>
               </div>
             ))}
@@ -1384,35 +1457,52 @@ export default function App() {
                   </div>
 
                   <div className="hero-action-stack">
-                    <button
-                      className="a24-btn-primary"
-                      onClick={() => handleInteraction(featuredMovie.id, "watched")}
-                    >
-                      [ MARK WATCHED ]
-                    </button>
-                    <button
-                      className="a24-btn-secondary"
-                      onClick={() => handleInteraction(featuredMovie.id, "watchlist")}
-                    >
-                      + ADD TO ARCHIVE
-                    </button>
-                    <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                      <button
-                        className="a24-btn-secondary"
-                        style={{ flex: 1 }}
-                        onClick={() => handleInteraction(featuredMovie.id, "liked")}
-                      >
-                        LIKE
-                      </button>
-                      <button
-                        className="a24-btn-secondary"
-                        style={{ flex: 1 }}
-                        onClick={() => handleInteraction(featuredMovie.id, "disliked")}
-                      >
-                        DISLIKE
-                      </button>
-                    </div>
+                    {(() => {
+                      const status = userInteractionsMap[featuredMovie.id] || {
+                        is_watched: false,
+                        is_liked: false,
+                        is_disliked: false,
+                        is_watchlist: false,
+                      };
+                      return (
+                        <>
+                          <button
+                            className={`a24-btn-primary ${status.is_watched ? "is-watched-active" : ""}`}
+                            onClick={() => handleInteraction(featuredMovie.id, "watched")}
+                            title={status.is_watched ? "Marked as Watched in Personal Archive" : "Mark as Watched"}
+                          >
+                            {status.is_watched ? "[ ✓ WATCHED ]" : "[ MARK WATCHED ]"}
+                          </button>
+                          <button
+                            className={`a24-btn-secondary ${status.is_watchlist ? "is-watchlist-active" : ""}`}
+                            onClick={() => handleInteraction(featuredMovie.id, "watchlist")}
+                            title={status.is_watchlist ? "In your Archive / Watchlist" : "Add to Archive"}
+                          >
+                            {status.is_watchlist ? "✓ IN ARCHIVE" : "+ ADD TO ARCHIVE"}
+                          </button>
+                          <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                            <button
+                              className={`a24-btn-secondary ${status.is_liked ? "is-liked-active" : ""}`}
+                              style={{ flex: 1 }}
+                              onClick={() => handleInteraction(featuredMovie.id, "liked")}
+                              title={status.is_liked ? "Marked as Liked" : "Like this film"}
+                            >
+                              {status.is_liked ? "✓ LIKED" : "LIKE"}
+                            </button>
+                            <button
+                              className={`a24-btn-secondary ${status.is_disliked ? "is-disliked-active" : ""}`}
+                              style={{ flex: 1 }}
+                              onClick={() => handleInteraction(featuredMovie.id, "disliked")}
+                              title={status.is_disliked ? "Marked as Disliked" : "Dislike this film"}
+                            >
+                              {status.is_disliked ? "✕ DISLIKED" : "DISLIKE"}
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
+
                 </div>
               </div>
             </section>
@@ -1431,6 +1521,7 @@ export default function App() {
                 <EditorialCard
                   key={film.id}
                   movie={film}
+                  isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
                 />
@@ -1449,6 +1540,7 @@ export default function App() {
                 <EditorialCard
                   key={film.id}
                   movie={film}
+                  isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
                 />
@@ -1467,6 +1559,7 @@ export default function App() {
                 <EditorialCard
                   key={film.id}
                   movie={film}
+                  isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
                 />
@@ -1505,6 +1598,7 @@ export default function App() {
               <EditorialCard
                 key={film.id}
                 movie={film}
+                isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                 onSelect={() => { setFeaturedMovie(film); setActiveTab("films"); }}
                 onOpenModal={() => openMovieModal(film)}
               />
@@ -1844,11 +1938,16 @@ export default function App() {
                             }}
                           >
                             {m.poster_path && (
-                              <img
-                                src={`${TMDB_IMAGE_BASE}/w400${m.poster_path}`}
-                                alt={m.title}
-                                className="curator-card-poster"
-                              />
+                              <div style={{ position: "relative" }}>
+                                <img
+                                  src={`${TMDB_IMAGE_BASE}/w400${m.poster_path}`}
+                                  alt={m.title}
+                                  className="curator-card-poster"
+                                />
+                                {userInteractionsMap[m.id]?.is_watched && (
+                                  <span className="card-watched-pill" style={{ top: "8px", left: "8px" }}>✓ WATCHED</span>
+                                )}
+                              </div>
                             )}
                             <div className="curator-card-body">
                               <div className="curator-card-title">{m.title}</div>
@@ -1962,33 +2061,39 @@ export default function App() {
               </div>
 
               <div style={{ display: "flex", gap: "14px", marginTop: "10px" }}>
-                <button
-                  className="a24-btn-primary"
-                  onClick={() => {
-                    handleInteraction(selectedModalMovie.id, "watched");
-                    setSelectedModalMovie(null);
-                  }}
-                >
-                  [ Mark Watched ]
-                </button>
-                <button
-                  className="a24-btn-secondary"
-                  onClick={() => {
-                    handleInteraction(selectedModalMovie.id, "liked");
-                    setSelectedModalMovie(null);
-                  }}
-                >
-                  Like
-                </button>
-                <button
-                  className="a24-btn-secondary"
-                  onClick={() => {
-                    handleInteraction(selectedModalMovie.id, "watchlist");
-                    setSelectedModalMovie(null);
-                  }}
-                >
-                  + Add to Watchlist
-                </button>
+                {(() => {
+                  const modalStatus = userInteractionsMap[selectedModalMovie.id] || {
+                    is_watched: false,
+                    is_liked: false,
+                    is_disliked: false,
+                    is_watchlist: false,
+                  };
+                  return (
+                    <>
+                      <button
+                        className={`a24-btn-primary ${modalStatus.is_watched ? "is-watched-active" : ""}`}
+                        onClick={() => handleInteraction(selectedModalMovie.id, "watched")}
+                        title={modalStatus.is_watched ? "Marked as Watched in Personal Archive" : "Mark as Watched"}
+                      >
+                        {modalStatus.is_watched ? "[ ✓ WATCHED ]" : "[ MARK WATCHED ]"}
+                      </button>
+                      <button
+                        className={`a24-btn-secondary ${modalStatus.is_liked ? "is-liked-active" : ""}`}
+                        onClick={() => handleInteraction(selectedModalMovie.id, "liked")}
+                        title={modalStatus.is_liked ? "Marked as Liked" : "Like this film"}
+                      >
+                        {modalStatus.is_liked ? "✓ LIKED" : "LIKE"}
+                      </button>
+                      <button
+                        className={`a24-btn-secondary ${modalStatus.is_watchlist ? "is-watchlist-active" : ""}`}
+                        onClick={() => handleInteraction(selectedModalMovie.id, "watchlist")}
+                        title={modalStatus.is_watchlist ? "In your Archive / Watchlist" : "Add to Archive"}
+                      >
+                        {modalStatus.is_watchlist ? "✓ IN ARCHIVE" : "+ ADD TO ARCHIVE"}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Similar Titles */}
@@ -1999,7 +2104,7 @@ export default function App() {
                     {similarMovies.map((sim) => (
                       <div
                         key={sim.id}
-                        style={{ width: "110px", flexShrink: 0, cursor: "pointer" }}
+                        style={{ width: "110px", flexShrink: 0, cursor: "pointer", position: "relative" }}
                         onClick={() => {
                           setSelectedModalMovie(sim);
                           setFeaturedMovie(sim);
@@ -2007,6 +2112,9 @@ export default function App() {
                       >
                         {sim.poster_path && (
                           <img src={`${TMDB_IMAGE_BASE}/w300${sim.poster_path}`} alt={sim.title} style={{ width: "100%", border: "1px solid var(--border-line)" }} />
+                        )}
+                        {userInteractionsMap[sim.id]?.is_watched && (
+                          <span className="card-watched-pill" style={{ top: "4px", left: "4px", fontSize: "0.55rem", padding: "2px 5px" }}>✓ WATCHED</span>
                         )}
                         <div style={{ fontFamily: "var(--font-serif)", fontSize: "0.85rem", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {sim.title}
@@ -2030,10 +2138,12 @@ export default function App() {
 // ── Subcomponent: Editorial Card ──
 function EditorialCard({
   movie,
+  isWatched,
   onSelect,
   onOpenModal,
 }: {
   movie: Movie;
+  isWatched?: boolean;
   onSelect: () => void;
   onOpenModal: () => void;
 }) {
@@ -2055,6 +2165,7 @@ function EditorialCard({
         ) : (
           <div style={{ padding: "40px", textAlign: "center", color: "#555" }}>{movie.title}</div>
         )}
+        {isWatched && <span className="card-watched-pill">✓ WATCHED</span>}
         {movie.tmdb_rating && (
           <span className="card-score-pill">★ {movie.tmdb_rating.toFixed(1)}</span>
         )}

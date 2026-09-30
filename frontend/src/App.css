@@ -585,6 +585,67 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Highlighted and Active Button States (Watched, Liked, Watchlist) */
+.a24-btn-primary.is-watched-active,
+.a24-btn-watched-active {
+  background: rgba(212, 163, 89, 0.22) !important;
+  border-color: var(--accent-gold) !important;
+  color: var(--accent-gold) !important;
+  box-shadow: 0 0 18px rgba(212, 163, 89, 0.35), inset 0 0 12px rgba(212, 163, 89, 0.15) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+}
+
+.a24-btn-primary.is-watched-active:hover,
+.a24-btn-watched-active:hover {
+  background: var(--accent-gold) !important;
+  color: #0b0c0f !important;
+  box-shadow: 0 0 26px rgba(212, 163, 89, 0.55) !important;
+}
+
+.a24-btn-secondary.is-watchlist-active,
+.a24-btn-watchlist-active {
+  background: rgba(212, 163, 89, 0.14) !important;
+  border-color: rgba(212, 163, 89, 0.7) !important;
+  color: var(--accent-gold) !important;
+  font-weight: 600 !important;
+}
+
+.a24-btn-secondary.is-liked-active,
+.a24-btn-liked-active {
+  background: rgba(212, 163, 89, 0.16) !important;
+  border-color: var(--accent-gold) !important;
+  color: var(--accent-gold) !important;
+  font-weight: 600 !important;
+}
+
+.a24-btn-secondary.is-disliked-active {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  color: #fca5a5 !important;
+  font-weight: 600 !important;
+}
+
+/* Movie Card Watched Badge */
+.card-watched-pill {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(9, 10, 13, 0.9);
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 2px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 163, 89, 0.35);
+  z-index: 10;
+}
+
+
 .editorial-btn-subgroup {
   display: flex;
   gap: 8px;
