@@ -100,7 +100,11 @@ interface UserInsights {
 }
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
-const API_BASE = (import.meta.env.VITE_API_URL as string) || "http://127.0.0.1:8000";
+const API_BASE =
+  (import.meta.env.VITE_API_URL as string) ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://127.0.0.1:8000"
+    : "https://movie-intelligence-platform-nqk7.onrender.com");
 
 // Curated critical reception quotes for A24 editorial style
 const EDITORIAL_QUOTES = [
