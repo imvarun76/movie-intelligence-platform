@@ -79,6 +79,8 @@ async def get_feed(
     current_user: OptionalUser = None,
     user_id: str | None = Query(None, description="User UUID (if authenticated or guest session)"),
     limit: int = Query(12, ge=4, le=30),
+    offset: int = Query(0, ge=0, description="Offset for pagination / refresh"),
+    refresh: bool = Query(False, description="Whether to generate fresh diverse recommendations"),
 ) -> Any:
     uid = current_user.id if current_user else None
     if not uid and user_id:
@@ -116,6 +118,8 @@ async def get_feed(
         session=db,
         user_id=target_uuid,
         limit=limit,
+        offset=offset,
+        refresh=refresh,
         exploration_rate=exploration_rate,
         max_genre_ratio=max_genre_ratio,
     )

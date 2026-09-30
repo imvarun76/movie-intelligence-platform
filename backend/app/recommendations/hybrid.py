@@ -15,6 +15,7 @@ Enforces Candidate Eligibility (Phase 4) and Diversity Re-Ranking.
 from __future__ import annotations
 
 import logging
+import random
 from collections import defaultdict
 from typing import Any
 from uuid import UUID
@@ -47,6 +48,8 @@ class HybridRanker:
         session: AsyncSession,
         user_id: UUID,
         limit: int = 20,
+        offset: int = 0,
+        refresh: bool = False,
         exploration_rate: float = 0.15,
         max_genre_ratio: float = 0.35,
     ) -> list[dict[str, Any]]:
@@ -63,10 +66,12 @@ class HybridRanker:
         excluded_ids = await get_user_exclusion_set(session, user_id)
 
         # 3. Fetch candidate pools
+        pool_target = max(limit + offset + 12, limit * 4)
+
         # Pool A: Popularity
         popularity_pool = await get_popular_movies(
             session=session,
-            limit=limit * 2,
+            limit=pool_target,
             excluded_ids=excluded_ids,
         )
 
@@ -75,11 +80,22 @@ class HybridRanker:
             ranked = apply_diversity_and_exploration(
                 ranked_candidates=popularity_pool,
                 exploration_pool=popularity_pool,
-                target_k=limit,
+                target_k=pool_target,
                 max_genre_ratio=max_genre_ratio,
                 exploration_rate=exploration_rate,
             )
-            return ranked
+            if offset > 0 and len(ranked) > offset:
+                sliced = ranked[offset : offset + limit]
+                if len(sliced) < limit and len(ranked) >= limit:
+                    sliced += ranked[: limit - len(sliced)]
+                return sliced
+            if refresh and len(ranked) > limit:
+                step = random.randint(1, max(1, len(ranked) - limit))
+                sliced = ranked[step : step + limit]
+                if len(sliced) < limit:
+                    sliced += ranked[: limit - len(sliced)]
+                return sliced
+            return ranked[:limit]
 
         # Fetch user's interaction history
         user_inter_stmt = select(Interaction).where(Interaction.user_id == user_id)
@@ -96,7 +112,7 @@ class HybridRanker:
         content_engine = await get_content_engine(session)
         content_pool = content_engine.get_recommendations_for_user(
             user_history=user_history,
-            limit=limit * 2,
+            limit=pool_target,
             excluded_ids=excluded_ids,
         )
 
@@ -106,7 +122,7 @@ class HybridRanker:
             collab_pool = await get_collaborative_recommendations(
                 session=session,
                 user_id=user_id,
-                limit=limit * 2,
+                limit=pool_target,
                 excluded_ids=excluded_ids,
             )
 
@@ -156,9 +172,22 @@ class HybridRanker:
         final_ranked = apply_diversity_and_exploration(
             ranked_candidates=blended,
             exploration_pool=popularity_pool,
-            target_k=limit,
+            target_k=pool_target,
             max_genre_ratio=max_genre_ratio,
             exploration_rate=exploration_rate,
         )
 
-        return final_ranked
+        if offset > 0 and len(final_ranked) > offset:
+            sliced = final_ranked[offset : offset + limit]
+            if len(sliced) < limit and len(final_ranked) >= limit:
+                sliced += final_ranked[: limit - len(sliced)]
+            return sliced
+
+        if refresh and len(final_ranked) > limit:
+            step = random.randint(1, max(1, len(final_ranked) - limit))
+            sliced = final_ranked[step : step + limit]
+            if len(sliced) < limit:
+                sliced += final_ranked[: limit - len(sliced)]
+            return sliced
+
+        return final_ranked[:limit]

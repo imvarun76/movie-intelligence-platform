@@ -226,6 +226,10 @@ export default function App() {
   const [criticReview, setCriticReview] = useState<CriticReview | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Recommendations refresh & pagination state
+  const [isRefreshingRecs, setIsRefreshingRecs] = useState(false);
+  const [recsOffset, setRecsOffset] = useState(0);
+
   // Archive state
   const [archiveFilter, setArchiveFilter] = useState<"all" | "watched" | "liked" | "watchlist">("all");
   const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([]);
@@ -800,6 +804,27 @@ export default function App() {
       }
     } catch {
       showToast("Failed to record interaction");
+    }
+  };
+
+  // Refresh recommendations based on user archive
+  const handleRefreshRecommendations = async () => {
+    setIsRefreshingRecs(true);
+    try {
+      const nextOffset = recsOffset + 12;
+      setRecsOffset(nextOffset);
+      const res = await authFetch(
+        `${API_BASE}/api/v1/recommendations?limit=12&offset=${nextOffset}&refresh=true&_t=${Date.now()}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setFeed((prev) => (prev ? { ...prev, recommended_for_you: data.recommended_for_you } : data));
+        showToast("Curated new recommendations based on your archive");
+      }
+    } catch {
+      showToast("Unable to refresh recommendations");
+    } finally {
+      setTimeout(() => setIsRefreshingRecs(false), 500);
     }
   };
 
@@ -1587,10 +1612,24 @@ export default function App() {
           {/* ── Recommendations Row ── */}
           <section className="catalog-row-section">
             <div className="row-header-wrap">
-              <h2 className="section-title">Recommended Selections</h2>
-              <span className="meta-label">
-                {insights?.cold_start_tier.toUpperCase() || "NEW"} HYBRID SYNTHESIS
-              </span>
+              <div>
+                <h2 className="section-title">Recommended Selections</h2>
+                <span className="meta-label">
+                  {insights?.cold_start_tier.toUpperCase() || "NEW"} HYBRID SYNTHESIS • BASED ON YOUR ARCHIVE
+                </span>
+              </div>
+              <div className="row-header-actions">
+                <button
+                  type="button"
+                  className="refresh-recommendations-btn"
+                  onClick={handleRefreshRecommendations}
+                  disabled={isRefreshingRecs}
+                  title="Discover new un-watched recommendations tailored to your taste profile"
+                >
+                  <span className={`refresh-spin-icon ${isRefreshingRecs ? "spinning" : ""}`}>⟳</span>
+                  <span>{isRefreshingRecs ? "CURATING..." : "REFRESH"}</span>
+                </button>
+              </div>
             </div>
             <div className="editorial-grid">
               {(feed?.recommended_for_you || []).map((film) => (
@@ -1600,6 +1639,7 @@ export default function App() {
                   isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
+                  onToggleWatch={() => handleInteraction(film.id, "watched")}
                 />
               ))}
             </div>
@@ -1619,6 +1659,7 @@ export default function App() {
                   isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
+                  onToggleWatch={() => handleInteraction(film.id, "watched")}
                 />
               ))}
             </div>
@@ -1638,6 +1679,7 @@ export default function App() {
                   isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                   onSelect={() => setFeaturedMovie(film)}
                   onOpenModal={() => openMovieModal(film)}
+                  onToggleWatch={() => handleInteraction(film.id, "watched")}
                 />
               ))}
             </div>
@@ -1677,6 +1719,7 @@ export default function App() {
                 isWatched={Boolean(userInteractionsMap[film.id]?.is_watched)}
                 onSelect={() => { setFeaturedMovie(film); setActiveTab("films"); }}
                 onOpenModal={() => openMovieModal(film)}
+                onToggleWatch={() => handleInteraction(film.id, "watched")}
               />
             ))}
           </div>
@@ -2217,11 +2260,13 @@ function EditorialCard({
   isWatched,
   onSelect,
   onOpenModal,
+  onToggleWatch,
 }: {
   movie: Movie;
   isWatched?: boolean;
   onSelect: () => void;
   onOpenModal: () => void;
+  onToggleWatch?: () => void;
 }) {
   return (
     <div
@@ -2245,6 +2290,34 @@ function EditorialCard({
         {movie.tmdb_rating && (
           <span className="card-score-pill">★ {movie.tmdb_rating.toFixed(1)}</span>
         )}
+
+        {/* Hover Action Overlay with Blurred Poster & Instant Mark Watched Button */}
+        <div className="card-hover-overlay">
+          {onToggleWatch && (
+            <button
+              type="button"
+              className={`card-hover-btn-watch ${isWatched ? "is-watched-active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleWatch();
+              }}
+              title={isWatched ? "Marked as Watched • Click again to unmark" : "Mark as Watched"}
+            >
+              {isWatched ? "[ ✓ WATCHED ]" : "[ MARK WATCHED ]"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="card-hover-btn-details"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenModal();
+            }}
+            title="Open Film Dossier"
+          >
+            Dossier ↗
+          </button>
+        </div>
       </div>
 
       <div className="card-meta-wrap">
