@@ -118,7 +118,9 @@ export interface ArchiveItem {
 
 export interface UserProfile {
   id: string;
-  username: string;
+  name: string;
+  email: string;
+  username: string | null;
   cold_start_tier: string;
   interaction_count: number;
   watched_count: number;
@@ -171,14 +173,49 @@ const EDITORIAL_QUOTES = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<"films" | "explore" | "archive" | "intelligence" | "ai">("films");
   const [showIndex, setShowIndex] = useState(false);
-  const [userId, setUserId] = useState<string>(() => localStorage.getItem("showdyme_user_id") || "");
-  const [currentUsername, setCurrentUsername] = useState<string>(
-    () => localStorage.getItem("showdyme_username") || ""
-  );
-  const [showAccountModal, setShowAccountModal] = useState<boolean>(
-    () => !localStorage.getItem("showdyme_username")
-  );
-  const [newUsernameInput, setNewUsernameInput] = useState("");
+
+  // Authentication & Session Identity
+  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem("showdyme_auth_token"));
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    const raw = localStorage.getItem("showdyme_user");
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const [authView, setAuthView] = useState<"login" | "signup" | "forgot" | "reset">("login");
+  const [showUserModal, setShowUserModal] = useState<boolean>(false);
+
+  // Auth form states
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
+
+  const [signupName, setSignupName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [isSignupLoading, setIsSignupLoading] = useState(false);
+
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotResetToken, setForgotResetToken] = useState<string | null>(null);
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  const [resetToken, setResetToken] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [isResetLoading, setIsResetLoading] = useState(false);
 
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [insights, setInsights] = useState<UserInsights | null>(null);
@@ -231,12 +268,32 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Fetch Archive
-  const fetchArchive = async (uid: string, filter: string = "all") => {
+  // Authenticated Fetch Helper
+  const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const token = localStorage.getItem("showdyme_auth_token");
+    const headers = new Headers(init?.headers || {});
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    const res = await fetch(input, { ...init, headers });
+    if (res.status === 401 && token) {
+      localStorage.removeItem("showdyme_auth_token");
+      localStorage.removeItem("showdyme_user");
+      setAuthToken(null);
+      setCurrentUser(null);
+      setAuthView("login");
+      showToast("Session expired. Please sign in again.");
+    }
+    return res;
+  };
+
+  // Fetch Archive for Authenticated User
+  const fetchArchive = async (filter: string = "all") => {
+    if (!localStorage.getItem("showdyme_auth_token")) return;
     setIsArchiveLoading(true);
     try {
-      const url = `${API_BASE}/api/v1/interactions/user/${uid}/archive${filter !== "all" ? `?filter_type=${filter}` : ""}`;
-      const res = await fetch(url);
+      const url = `${API_BASE}/api/v1/interactions/me/archive${filter !== "all" ? `?filter_type=${filter}` : ""}`;
+      const res = await authFetch(url);
       if (res.ok) {
         const data = await res.json();
         setArchiveItems(data);
@@ -248,58 +305,254 @@ export default function App() {
     }
   };
 
-  // Login or Register by username
-  const loginOrSwitchUser = async (rawUsername: string) => {
-    const clean = rawUsername.trim().toLowerCase();
-    if (!clean) return;
+  // Sign Up Handler
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignupError(null);
+
+    const name = signupName.trim();
+    const email = signupEmail.trim();
+    const password = signupPassword;
+    const confirmPassword = signupConfirmPassword;
+
+    if (!name || !email || !password || !confirmPassword) {
+      setSignupError("All fields are required.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setSignupError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 6) {
+      setSignupError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setIsSignupLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/users/login-or-register`, {
+      const res = await fetch(`${API_BASE}/api/v1/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: clean }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          confirm_password: confirmPassword,
+        }),
       });
-      if (res.ok) {
-        const userProf = await res.json();
-        setUserId(userProf.id);
-        setCurrentUsername(userProf.username);
-        localStorage.setItem("showdyme_user_id", userProf.id);
-        localStorage.setItem("showdyme_username", userProf.username);
-        setShowAccountModal(false);
-        setNewUsernameInput("");
-        showToast(`Connected as @${userProf.username}`);
-        refreshData(userProf.id);
-        fetchArchive(userProf.id, archiveFilter);
-      } else {
-        showToast("Error registering or switching user.");
+      const data = await res.json();
+      if (!res.ok) {
+        setSignupError(data.detail || "Error creating account.");
+        return;
       }
+
+      localStorage.setItem("showdyme_auth_token", data.access_token);
+      localStorage.setItem("showdyme_user", JSON.stringify(data.user));
+      setAuthToken(data.access_token);
+      setCurrentUser(data.user);
+      showToast(`Welcome to ShowDyme, ${data.user.name}!`);
+      refreshData();
+      fetchArchive(archiveFilter);
     } catch {
-      showToast("Could not connect to user account service.");
+      setSignupError("Could not reach ShowDyme authentication service.");
+    } finally {
+      setIsSignupLoading(false);
     }
   };
 
-  // Persistent user identity on startup — prompt login if not authenticated
-  useEffect(() => {
-    const storedUsername = localStorage.getItem("showdyme_username");
-    if (storedUsername) {
-      loginOrSwitchUser(storedUsername);
-    } else {
-      setShowAccountModal(true);
+  // Login Handler
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+
+    const email = loginEmail.trim();
+    const password = loginPassword;
+
+    if (!email || !password) {
+      setLoginError("Please enter your email and password.");
+      return;
     }
+
+    setIsLoginLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.detail || "Invalid email or password.");
+        return;
+      }
+
+      localStorage.setItem("showdyme_auth_token", data.access_token);
+      localStorage.setItem("showdyme_user", JSON.stringify(data.user));
+      setAuthToken(data.access_token);
+      setCurrentUser(data.user);
+      showToast(`Welcome back, ${data.user.name}!`);
+      refreshData();
+      fetchArchive(archiveFilter);
+    } catch {
+      setLoginError("Could not reach ShowDyme authentication service.");
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
+
+  // Forgot Password Handler
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotMessage(null);
+    setForgotResetToken(null);
+
+    const email = forgotEmail.trim();
+    if (!email) {
+      setForgotError("Please enter your email address.");
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setForgotError(data.detail || "Error initiating password reset.");
+        return;
+      }
+
+      setForgotMessage(data.message);
+      if (data.debug_reset_token) {
+        setForgotResetToken(data.debug_reset_token);
+      }
+    } catch {
+      setForgotError("Could not connect to authentication service.");
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
+  // Reset Password Handler
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+    setResetMessage(null);
+
+    const token = resetToken.trim();
+    const password = resetPassword;
+    const confirmPassword = resetConfirmPassword;
+
+    if (!token || !password || !confirmPassword) {
+      setResetError("All fields are required.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setResetError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 6) {
+      setResetError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setIsResetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          password,
+          confirm_password: confirmPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResetError(data.detail || "Error resetting password.");
+        return;
+      }
+
+      setResetMessage(data.message);
+      showToast("Password reset successfully. Please sign in.");
+      setTimeout(() => {
+        setAuthView("login");
+        setLoginEmail(forgotEmail);
+        setLoginPassword("");
+        setResetMessage(null);
+      }, 1400);
+    } catch {
+      setResetError("Could not reach authentication service.");
+    } finally {
+      setIsResetLoading(false);
+    }
+  };
+
+  // Logout Handler
+  const handleLogout = async () => {
+    try {
+      await authFetch(`${API_BASE}/api/v1/auth/logout`, { method: "POST" });
+    } catch {
+      // Ignore network errors on logout
+    }
+    localStorage.removeItem("showdyme_auth_token");
+    localStorage.removeItem("showdyme_user");
+    setAuthToken(null);
+    setCurrentUser(null);
+    setShowUserModal(false);
+    setAuthView("login");
+    showToast("Signed out successfully.");
+  };
+
+  // Session verification on mount & refresh
+  useEffect(() => {
+    const token = localStorage.getItem("showdyme_auth_token");
+    if (!token) {
+      setAuthToken(null);
+      setCurrentUser(null);
+      return;
+    }
+
+    fetch(`${API_BASE}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error("Invalid session");
+      })
+      .then((user: UserProfile) => {
+        setAuthToken(token);
+        setCurrentUser(user);
+        localStorage.setItem("showdyme_user", JSON.stringify(user));
+        refreshData();
+        fetchArchive(archiveFilter);
+      })
+      .catch(() => {
+        localStorage.removeItem("showdyme_auth_token");
+        localStorage.removeItem("showdyme_user");
+        setAuthToken(null);
+        setCurrentUser(null);
+      });
   }, []);
 
   // When archive filter changes
   useEffect(() => {
-    if (userId) {
-      fetchArchive(userId, archiveFilter);
+    if (authToken && currentUser) {
+      fetchArchive(archiveFilter);
     }
-  }, [archiveFilter, userId]);
+  }, [archiveFilter]);
+
 
   // Fetch Feed & Insights
-  const refreshData = async (uid: string) => {
+  const refreshData = async () => {
     try {
       const [feedRes, insightsRes, catalogRes, mlopsRes, abRes, runsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/recommendations?user_id=${uid}&limit=12`),
-        fetch(`${API_BASE}/api/v1/interactions/user/${uid}/insights`),
+        authFetch(`${API_BASE}/api/v1/recommendations?limit=12`),
+        authFetch(`${API_BASE}/api/v1/interactions/me/insights`),
         fetch(`${API_BASE}/api/v1/movies?page_size=100`),
         fetch(`${API_BASE}/api/v1/mlops/status`),
         fetch(`${API_BASE}/api/v1/mlops/experiments/recommender_hybrid_v1`),
@@ -341,11 +594,11 @@ export default function App() {
   const handleSyncFeatures = async () => {
     setIsSyncingFeatures(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/mlops/features/sync`, { method: "POST" });
+      const res = await authFetch(`${API_BASE}/api/v1/mlops/features/sync`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         showToast(`Feature Store: ${data.movies_synced} movies & ${data.users_synced} users synced`);
-        if (userId) refreshData(userId);
+        refreshData();
       }
     } catch {
       showToast("Feature sync failed");
@@ -357,11 +610,11 @@ export default function App() {
   const handleRunEvaluation = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/mlops/models/evaluate?k=10`, { method: "POST" });
+      const res = await authFetch(`${API_BASE}/api/v1/mlops/models/evaluate?k=10`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         showToast(`Offline Evaluation: Precision@10: ${data.metrics.precision_at_k.toFixed(3)}, NDCG@10: ${data.metrics.ndcg_at_k.toFixed(3)}`);
-        if (userId) refreshData(userId);
+        refreshData();
       }
     } catch {
       showToast("Evaluation failed");
@@ -375,13 +628,15 @@ export default function App() {
     movieId: number,
     eventType: "watched" | "liked" | "disliked" | "watchlist"
   ) => {
-    if (!userId) return;
+    if (!authToken || !currentUser) {
+      setAuthView("login");
+      return;
+    }
     try {
-      const res = await fetch(`${API_BASE}/api/v1/interactions`, {
+      const res = await authFetch(`${API_BASE}/api/v1/interactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: userId,
           movie_id: movieId,
           event_type: eventType,
           source: "web_ui",
@@ -397,8 +652,8 @@ export default function App() {
           watchlist: "Bookmarked to Watchlist",
         };
         showToast(`${actionLabels[eventType]} • Tier: ${data.cold_start_tier.toUpperCase()}`);
-        refreshData(userId);
-        fetchArchive(userId, archiveFilter);
+        refreshData();
+        fetchArchive(archiveFilter);
       }
     } catch {
       showToast("Failed to record interaction");
@@ -439,7 +694,7 @@ export default function App() {
         const fullDetail = await res.json();
         setSelectedModalMovie(fullDetail);
       }
-      const simRes = await fetch(`${API_BASE}/api/v1/recommendations?user_id=${userId}&limit=5`);
+      const simRes = await authFetch(`${API_BASE}/api/v1/recommendations?limit=5`);
       if (simRes.ok) {
         const simData = await simRes.json();
         setSimilarMovies(simData.top_rated.filter((m: Movie) => m.id !== movie.id).slice(0, 4));
@@ -486,15 +741,15 @@ export default function App() {
     setIsCuratorLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/curator/chat`, {
+      const res = await authFetch(`${API_BASE}/api/v1/curator/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: query,
-          user_id: userId || null,
           limit: 3,
         }),
       });
+
 
       if (res.ok) {
         const data = await res.json();
@@ -587,77 +842,417 @@ export default function App() {
             </div>
           )}
 
-          {/* User Account / Persona Switcher */}
-          <button
-            className="user-profile-btn"
-            onClick={() => setShowAccountModal(true)}
-            title="Switch Persona / Account"
-          >
-            <span className="user-avatar-icon">👤</span>
-            <span className="user-name-text">
-              {currentUsername ? `@${currentUsername}` : "Sign In"}
-            </span>
-            <span className="user-tier-pill">{insights?.cold_start_tier || "new"} tier</span>
-            <span className="user-caret">▾</span>
-          </button>
+          {/* User Account / Profile Button */}
+          {currentUser ? (
+            <button
+              className="user-profile-btn"
+              onClick={() => setShowUserModal(true)}
+              title="View Account Profile"
+            >
+              <span className="user-avatar-icon">👤</span>
+              <span className="user-name-text">
+                {currentUser.name || currentUser.username || "Member"}
+              </span>
+              <span className="user-tier-pill">
+                {insights?.cold_start_tier || currentUser.cold_start_tier || "new"} tier
+              </span>
+              <span className="user-caret">▾</span>
+            </button>
+          ) : (
+            <button
+              className="user-profile-btn"
+              onClick={() => { setAuthView("login"); }}
+              title="Sign In"
+            >
+              <span className="user-avatar-icon">👤</span>
+              <span className="user-name-text">Sign In</span>
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ── User Account Modal (Mandatory on First Visit & Private) ── */}
-      {showAccountModal && (
-        <div
-          className="account-modal-overlay"
-          onClick={() => {
-            if (userId && currentUsername) {
-              setShowAccountModal(false);
-            }
-          }}
-        >
-          <div className="account-modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="account-modal-header">
-              <h2 className="account-modal-title">
-                {userId && currentUsername ? "User Identity" : "Welcome to ShowDyme"}
-              </h2>
-              {userId && currentUsername && (
-                <button className="a24-btn-secondary" onClick={() => setShowAccountModal(false)}>
-                  [ Close ]
-                </button>
-              )}
+      {/* ── ShowDyme Authentication Modal (Mandatory For Non-Authenticated Visitors) ── */}
+      {(!authToken || !currentUser) && (
+        <div className="account-modal-overlay">
+          <div className="account-modal-box">
+            {/* Header Lockup */}
+            <div className="auth-header-lockup">
+              <div className="showdyme-wordmark" style={{ justifyContent: "center", marginBottom: "4px" }}>
+                <span>Show</span><span className="showdyme-wordmark-accent">Dyme</span>
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--accent-gold)" }}>
+                Cinema Intelligence & Taste Platform
+              </div>
+              <p className="auth-subtitle">
+                {authView === "login" && "Sign in to access your personal archive, bespoke recommendations, and AI curator."}
+                {authView === "signup" && "Create your private account to start archiving films and training your personal taste profile."}
+                {authView === "forgot" && "Enter your registered email to request a secure password reset link."}
+                {authView === "reset" && "Enter your single-use reset token and create a new password."}
+              </p>
             </div>
 
-            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "20px", lineHeight: 1.6 }}>
-              Enter your username to access or create your isolated <strong>Personal Archive</strong>, taste profile, and personalized recommendation models.
-            </p>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                loginOrSwitchUser(newUsernameInput);
-              }}
-              className="account-input-group"
-            >
-              <input
-                type="text"
-                className="account-input"
-                placeholder="Enter username (e.g. varun, cinephile)..."
-                value={newUsernameInput}
-                onChange={(e) => setNewUsernameInput(e.target.value)}
-                autoFocus
-                required
-              />
-              <button type="submit" className="a24-btn-primary" style={{ padding: "0 22px" }}>
-                {userId && currentUsername ? "Switch / Sign In" : "Enter Platform"}
-              </button>
-            </form>
-
-            {currentUsername && (
-              <div style={{ marginTop: "22px", paddingTop: "14px", borderTop: "1px solid var(--border-line)", fontSize: "0.82rem", color: "var(--text-muted)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Currently active: <strong style={{ color: "#fff" }}>@{currentUsername}</strong></span>
-                <span style={{ color: "var(--accent-gold)", textTransform: "uppercase", fontSize: "0.75rem" }}>
-                  {insights?.cold_start_tier || "new"} tier
-                </span>
+            {/* Segmented Navigation for Login / Sign Up */}
+            {(authView === "login" || authView === "signup") && (
+              <div className="auth-tabs-nav">
+                <button
+                  type="button"
+                  className={`auth-tab-btn ${authView === "login" ? "active" : ""}`}
+                  onClick={() => { setAuthView("login"); setLoginError(null); setSignupError(null); }}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  className={`auth-tab-btn ${authView === "signup" ? "active" : ""}`}
+                  onClick={() => { setAuthView("signup"); setLoginError(null); setSignupError(null); }}
+                >
+                  Create Account
+                </button>
               </div>
             )}
+
+            {/* SCREEN 1: LOGIN */}
+            {authView === "login" && (
+              <form className="auth-form" onSubmit={handleLogin}>
+                {loginError && (
+                  <div className="auth-error-banner">
+                    <span>⚠️</span>
+                    <span>{loginError}</span>
+                  </div>
+                )}
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Email Address</label>
+                  <input
+                    type="email"
+                    className="auth-input"
+                    placeholder="you@example.com"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <div className="auth-label-row">
+                    <label className="auth-field-label">Password</label>
+                    <button
+                      type="button"
+                      className="auth-forgot-link"
+                      onClick={() => { setAuthView("forgot"); setForgotError(null); setForgotMessage(null); }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <input
+                    type="password"
+                    className="auth-input"
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="auth-submit-btn" disabled={isLoginLoading}>
+                  {isLoginLoading ? "Signing In..." : "Sign In"}
+                </button>
+
+                <div className="auth-switch-footer">
+                  <span>Don't have an account?</span>
+                  <button
+                    type="button"
+                    className="auth-inline-link"
+                    onClick={() => { setAuthView("signup"); setLoginError(null); setSignupError(null); }}
+                  >
+                    Create Account
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* SCREEN 2: SIGN UP */}
+            {authView === "signup" && (
+              <form className="auth-form" onSubmit={handleSignUp}>
+                {signupError && (
+                  <div className="auth-error-banner">
+                    <span>⚠️</span>
+                    <span>{signupError}</span>
+                  </div>
+                )}
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Full Name</label>
+                  <input
+                    type="text"
+                    className="auth-input"
+                    placeholder="e.g. Varun Mishra"
+                    value={signupName}
+                    onChange={(e) => setSignupName(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Email Address</label>
+                  <input
+                    type="email"
+                    className="auth-input"
+                    placeholder="you@example.com"
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Password (Min. 6 chars)</label>
+                  <input
+                    type="password"
+                    className="auth-input"
+                    placeholder="••••••••"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Confirm Password</label>
+                  <input
+                    type="password"
+                    className="auth-input"
+                    placeholder="••••••••"
+                    value={signupConfirmPassword}
+                    onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                <button type="submit" className="auth-submit-btn" disabled={isSignupLoading}>
+                  {isSignupLoading ? "Creating Account..." : "Create Account"}
+                </button>
+
+                <div className="auth-switch-footer">
+                  <span>Already have an account?</span>
+                  <button
+                    type="button"
+                    className="auth-inline-link"
+                    onClick={() => { setAuthView("login"); setLoginError(null); setSignupError(null); }}
+                  >
+                    Sign In
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* SCREEN 3: FORGOT PASSWORD */}
+            {authView === "forgot" && (
+              <form className="auth-form" onSubmit={handleForgotPassword}>
+                {forgotError && (
+                  <div className="auth-error-banner">
+                    <span>⚠️</span>
+                    <span>{forgotError}</span>
+                  </div>
+                )}
+                {forgotMessage && (
+                  <div className="auth-success-banner">
+                    <p style={{ margin: "0 0 10px 0" }}>✓ {forgotMessage}</p>
+                    {forgotResetToken && (
+                      <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(212, 163, 89, 0.3)" }}>
+                        <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", color: "var(--accent-gold)", display: "block", marginBottom: "6px" }}>
+                          Single-Use Reset Token:
+                        </span>
+                        <code style={{ background: "rgba(0,0,0,0.4)", padding: "4px 8px", borderRadius: "2px", fontSize: "0.75rem", wordBreak: "break-all", display: "block" }}>
+                          {forgotResetToken}
+                        </code>
+                        <button
+                          type="button"
+                          className="auth-submit-btn"
+                          style={{ marginTop: "12px", background: "transparent", border: "1px solid var(--accent-gold)", color: "var(--accent-gold)" }}
+                          onClick={() => {
+                            setResetToken(forgotResetToken);
+                            setAuthView("reset");
+                            setForgotMessage(null);
+                          }}
+                        >
+                          [ Set New Password With Token → ]
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Registered Email</label>
+                  <input
+                    type="email"
+                    className="auth-input"
+                    placeholder="you@example.com"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <button type="submit" className="auth-submit-btn" disabled={isForgotLoading}>
+                  {isForgotLoading ? "Sending Link..." : "Send Reset Link"}
+                </button>
+
+                <div className="auth-switch-footer" style={{ display: "flex", justifyContent: "space-between" }}>
+                  <button
+                    type="button"
+                    className="auth-inline-link"
+                    style={{ margin: 0 }}
+                    onClick={() => { setAuthView("login"); setForgotError(null); setForgotMessage(null); }}
+                  >
+                    ← Back to Sign In
+                  </button>
+                  <button
+                    type="button"
+                    className="auth-inline-link"
+                    style={{ margin: 0 }}
+                    onClick={() => { setAuthView("reset"); setForgotError(null); setForgotMessage(null); }}
+                  >
+                    Have a Token? Reset →
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* SCREEN 4: RESET PASSWORD */}
+            {authView === "reset" && (
+              <form className="auth-form" onSubmit={handleResetPassword}>
+                {resetError && (
+                  <div className="auth-error-banner">
+                    <span>⚠️</span>
+                    <span>{resetError}</span>
+                  </div>
+                )}
+                {resetMessage && (
+                  <div className="auth-success-banner">
+                    ✓ {resetMessage}
+                  </div>
+                )}
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Reset Token</label>
+                  <input
+                    type="text"
+                    className="auth-input"
+                    placeholder="Paste reset token here"
+                    value={resetToken}
+                    onChange={(e) => setResetToken(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">New Password (Min. 6 chars)</label>
+                  <input
+                    type="password"
+                    className="auth-input"
+                    placeholder="••••••••"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                <div className="auth-field-group">
+                  <label className="auth-field-label">Confirm New Password</label>
+                  <input
+                    type="password"
+                    className="auth-input"
+                    placeholder="••••••••"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                <button type="submit" className="auth-submit-btn" disabled={isResetLoading}>
+                  {isResetLoading ? "Updating..." : "Update Password"}
+                </button>
+
+                <div className="auth-switch-footer">
+                  <button
+                    type="button"
+                    className="auth-inline-link"
+                    onClick={() => { setAuthView("login"); setResetError(null); setResetMessage(null); }}
+                  >
+                    ← Back to Sign In
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Authenticated User Modal / Account Details ── */}
+      {showUserModal && currentUser && (
+        <div className="account-modal-overlay" onClick={() => setShowUserModal(false)}>
+          <div className="account-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="account-modal-header">
+              <h2 className="account-modal-title">Member Profile</h2>
+              <button className="a24-btn-secondary" onClick={() => setShowUserModal(false)}>
+                [ Close ]
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ fontSize: "1.3rem", fontFamily: "var(--font-serif)", color: "#fff", marginBottom: "4px" }}>
+                {currentUser.name}
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem", color: "var(--accent-gold)", marginBottom: "8px" }}>
+                {currentUser.email}
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                Account ID: <span style={{ color: "#aaa" }}>{currentUser.id}</span>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-line)", padding: "12px", textAlign: "center" }}>
+                <div style={{ fontSize: "1.4rem", fontFamily: "var(--font-serif)", color: "var(--accent-gold)" }}>
+                  {insights?.watched_count ?? currentUser.watched_count ?? 0}
+                </div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Watched Films
+                </div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border-line)", padding: "12px", textAlign: "center" }}>
+                <div style={{ fontSize: "1.4rem", fontFamily: "var(--font-serif)", color: "var(--accent-gold)" }}>
+                  {insights?.liked_count ?? currentUser.liked_count ?? 0}
+                </div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Liked Affinities
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "18px" }}>
+              <span className="tier-indicator" style={{ borderColor: "var(--accent-gold)", color: "var(--accent-gold)" }}>
+                <span>COLD START:</span>
+                <span style={{ fontWeight: 600 }}>{(insights?.cold_start_tier || currentUser.cold_start_tier || "new").toUpperCase()}</span>
+              </span>
+
+              <button
+                type="button"
+                className="a24-btn-secondary"
+                style={{ borderColor: "rgba(239, 68, 68, 0.5)", color: "#fca5a5" }}
+                onClick={handleLogout}
+              >
+                [ Sign Out / Logout ]
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -924,8 +1519,9 @@ export default function App() {
           <div className="intelligence-header">
             <h1 className="intelligence-title">Personal Archive</h1>
             <p className="meta-label" style={{ marginTop: "8px" }}>
-              USER: @{currentUsername} • {archiveItems.length} UNIQUE PRODUCTIONS LOGGED
+              USER: {currentUser?.name || currentUser?.username || "MEMBER"} • {archiveItems.length} UNIQUE PRODUCTIONS LOGGED
             </p>
+
           </div>
 
           {/* Filter Pills */}
@@ -1198,7 +1794,7 @@ export default function App() {
           <div className="intelligence-header">
             <h1 className="intelligence-title">AI Film Curator</h1>
             <p className="meta-label" style={{ marginTop: "8px" }}>
-              Grounded conversational query engine conditioned on @{currentUsername}'s personal taste profile
+              Grounded conversational query engine conditioned on {currentUser?.name || currentUser?.username || "your"}'s personal taste profile
             </p>
           </div>
 
@@ -1207,8 +1803,9 @@ export default function App() {
               {chatMessages.map((msg, idx) => (
                 <div key={idx} style={{ alignSelf: msg.role === "user" ? "flex-end" : "flex-start", maxWidth: msg.role === "user" ? "75%" : "95%" }}>
                   <div className="meta-label" style={{ marginBottom: "6px", color: msg.role === "user" ? "var(--accent-gold)" : "var(--text-muted)" }}>
-                    {msg.role === "user" ? `@${currentUsername.toUpperCase()}` : "SHOWDYME AI CURATOR"}
+                    {msg.role === "user" ? `@${(currentUser?.name || currentUser?.username || "USER").toUpperCase()}` : "SHOWDYME AI CURATOR"}
                   </div>
+
 
                   <div style={{
                     padding: "16px 22px",

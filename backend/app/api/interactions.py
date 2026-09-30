@@ -8,10 +8,11 @@ import uuid
 from collections import Counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from backend.app.api.deps import CurrentUser
 from backend.app.api.movies import DBSession
 from backend.app.mlops.ab_testing import get_experiment_engine
 from backend.app.mlops.feature_store import FeatureStoreService
@@ -24,9 +25,9 @@ router = APIRouter(prefix="/interactions", tags=["interactions"])
 
 
 class InteractionCreate(BaseModel):
-    user_id: uuid.UUID
     movie_id: int
     event_type: str = Field(..., description="watched, liked, disliked, watchlist, rating, click")
+    user_id: uuid.UUID | None = Field(None, description="Optional legacy field; server uses authenticated user identity")
     value: float | None = Field(None, description="Optional score, e.g. rating 1.0 - 10.0")
     source: str = "web"
     event_metadata: dict[str, Any] | None = None
@@ -75,27 +76,23 @@ class ArchiveItem(BaseModel):
 @router.post("", response_model=InteractionResponse)
 async def record_interaction(
     payload: InteractionCreate,
+    current_user: CurrentUser,
     db: DBSession,
 ) -> Any:
+    """
+    Record a user interaction. The actor identity is strictly extracted from the
+    authenticated session token, never trusting client-supplied user IDs.
+    """
     # 1. Verify movie exists
     movie = await db.get(Movie, payload.movie_id)
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
 
-    # 2. Get or create user
-    user = await db.get(User, payload.user_id)
-    if not user:
-        user = User(
-            id=payload.user_id,
-            interaction_count=0,
-            cold_start_tier="new",
-        )
-        db.add(user)
-        await db.flush()
+    user = current_user
 
-    # 3. Create interaction event
+    # 2. Create interaction event
     interaction = Interaction(
-        user_id=payload.user_id,
+        user_id=user.id,
         movie_id=payload.movie_id,
         event_type=payload.event_type,
         value=payload.value,
@@ -104,25 +101,25 @@ async def record_interaction(
     )
     db.add(interaction)
 
-    # 4. Update user interaction count and cold-start tier
+    # 3. Update user interaction count and cold-start tier
     user.interaction_count += 1
     user.cold_start_tier = compute_cold_start_tier(user.interaction_count)
 
     await db.commit()
     await db.refresh(interaction)
 
-    # 5. Real-Time Feature Store Sync (Phase 6 MLOps)
+    # 4. Real-Time Feature Store Sync (Phase 6 MLOps)
     try:
-        await FeatureStoreService.compute_and_upsert_user_features(db, payload.user_id)
+        await FeatureStoreService.compute_and_upsert_user_features(db, user.id)
         await FeatureStoreService.compute_and_upsert_movie_features(db, payload.movie_id)
-        
-        # 6. A/B Testing Telemetry Conversion Event
+
+        # 5. A/B Testing Telemetry Conversion Event
         engine = get_experiment_engine()
-        variant = engine.assign_variant("recommender_hybrid_v1", payload.user_id)
+        variant = engine.assign_variant("recommender_hybrid_v1", user.id)
         await engine.log_event(
             session=db,
             experiment_name="recommender_hybrid_v1",
-            user_id=payload.user_id,
+            user_id=user.id,
             variant=variant.name,
             conversion_event=payload.event_type,
             value=payload.value,
@@ -142,31 +139,12 @@ async def record_interaction(
     )
 
 
-@router.get("/user/{user_id}/insights", response_model=UserInsights)
-async def get_user_insights(
-    user_id: uuid.UUID,
-    db: DBSession,
-) -> Any:
-    user = await db.get(User, user_id)
-    if not user:
-        # Default fresh user profile
-        return UserInsights(
-            user_id=user_id,
-            interaction_count=0,
-            cold_start_tier="new",
-            watched_count=0,
-            liked_count=0,
-            disliked_count=0,
-            watchlist_count=0,
-            top_genres=[],
-            recent_activity=[],
-        )
 
-    # Fetch user's interactions with movies
+async def _build_user_insights(user: User, db: DBSession) -> UserInsights:
     stmt = (
         select(Interaction, Movie)
         .join(Movie, Interaction.movie_id == Movie.id)
-        .where(Interaction.user_id == user_id)
+        .where(Interaction.user_id == user.id)
         .order_by(Interaction.occurred_at.desc())
     )
     rows = (await db.execute(stmt)).all()
@@ -201,7 +179,7 @@ async def get_user_insights(
     ]
 
     return UserInsights(
-        user_id=user_id,
+        user_id=user.id,
         interaction_count=user.interaction_count,
         cold_start_tier=user.cold_start_tier,
         watched_count=watched_count,
@@ -213,15 +191,7 @@ async def get_user_insights(
     )
 
 
-@router.get("/user/{user_id}/archive", response_model=list[ArchiveItem])
-async def get_user_archive(
-    user_id: uuid.UUID,
-    db: DBSession,
-    filter_type: str | None = None,  # "all", "watched", "liked", "watchlist"
-) -> Any:
-    """
-    Retrieve all movies in user's personal archive, strictly deduplicated by movie.
-    """
+async def _build_user_archive(user_id: uuid.UUID, db: DBSession, filter_type: str | None = None) -> list[ArchiveItem]:
     stmt = (
         select(Interaction, Movie)
         .join(Movie, Interaction.movie_id == Movie.id)
@@ -292,4 +262,61 @@ async def get_user_archive(
         )
 
     return items
+
+
+@router.get("/me/insights", response_model=UserInsights)
+async def get_my_insights(
+    current_user: CurrentUser,
+    db: DBSession,
+) -> Any:
+    """Retrieve taste insights for the authenticated user."""
+    return await _build_user_insights(current_user, db)
+
+
+@router.get("/me/archive", response_model=list[ArchiveItem])
+async def get_my_archive(
+    current_user: CurrentUser,
+    db: DBSession,
+    filter_type: str | None = None,
+) -> Any:
+    """Retrieve the personal movie archive for the authenticated user."""
+    return await _build_user_archive(current_user.id, db, filter_type)
+
+
+@router.get("/user/{user_id}/insights", response_model=UserInsights)
+async def get_user_insights(
+    user_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> Any:
+    """
+    Access insights for a specific user ID. Enforces strict user isolation:
+    User A cannot view User B's private insights.
+    """
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You cannot access another member's private insights.",
+        )
+    return await _build_user_insights(current_user, db)
+
+
+@router.get("/user/{user_id}/archive", response_model=list[ArchiveItem])
+async def get_user_archive(
+    user_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+    filter_type: str | None = None,
+) -> Any:
+    """
+    Access archive for a specific user ID. Enforces strict user isolation:
+    User A cannot view User B's private archive.
+    """
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You cannot access another member's private archive.",
+        )
+    return await _build_user_archive(user_id, db, filter_type)
+
 

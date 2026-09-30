@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.auth import router as auth_router
 from backend.app.api.curator import router as curator_router
 from backend.app.api.interactions import router as interactions_router
 from backend.app.api.mlops import router as mlops_router
@@ -35,12 +36,14 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(movies_router, prefix="/api/v1")
 app.include_router(recommendations_router, prefix="/api/v1")
 app.include_router(interactions_router, prefix="/api/v1")
 app.include_router(curator_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(mlops_router, prefix="/api/v1")
+
 
 
 @app.get("/health", tags=["health"])

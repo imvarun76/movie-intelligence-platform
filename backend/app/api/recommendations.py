@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.deps import OptionalUser
 from backend.app.api.movies import DBSession
 from backend.app.mlops.ab_testing import get_experiment_engine
 from backend.app.models.interaction import Interaction
@@ -21,6 +22,7 @@ from backend.app.recommendations.hybrid import HybridRanker
 from backend.app.recommendations.popularity import get_popular_movies
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+
 
 
 class MovieCard(BaseModel):
@@ -74,17 +76,19 @@ def _to_card(item: dict[str, Any]) -> MovieCard:
 @router.get("", response_model=RecommendationsFeed)
 async def get_feed(
     db: DBSession,
+    current_user: OptionalUser = None,
     user_id: str | None = Query(None, description="User UUID (if authenticated or guest session)"),
     limit: int = Query(12, ge=4, le=30),
 ) -> Any:
-    uid = None
-    if user_id:
+    uid = current_user.id if current_user else None
+    if not uid and user_id:
         try:
             uid = uuid.UUID(user_id)
         except ValueError:
             pass
 
     target_uuid = uid or uuid.uuid4()
+
 
     # 1. A/B Experiment Assignment (Phase 6 MLOps)
     engine = get_experiment_engine()

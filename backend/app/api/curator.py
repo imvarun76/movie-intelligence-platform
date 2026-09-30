@@ -19,12 +19,14 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
+from backend.app.api.deps import OptionalUser
 from backend.app.api.movies import DBSession
 from backend.app.models.interaction import Interaction
 from backend.app.models.movie import Movie
 from backend.app.models.user import User
 
 router = APIRouter(prefix="/curator", tags=["curator"])
+
 
 # Canonical genre mapping
 GENRE_SYNONYMS = {
@@ -92,7 +94,11 @@ def compute_bayesian_score(vote_avg: float | None, vote_count: int | None, m: in
 
 
 @router.post("/chat", response_model=CuratorChatResponse)
-async def curator_chat(payload: CuratorChatRequest, db: DBSession) -> Any:
+async def curator_chat(
+    payload: CuratorChatRequest,
+    db: DBSession,
+    current_user: OptionalUser = None,
+) -> Any:
     raw_query = payload.query.strip()
     q_lower = raw_query.lower()
 
@@ -100,18 +106,23 @@ async def curator_chat(payload: CuratorChatRequest, db: DBSession) -> Any:
     watched_movie_ids: set[int] = set()
     user_top_genres: list[str] = []
     user_genre_counter: Counter[str] = Counter()
-    user_name = "guest"
+    user_name = "film lover"
 
-    if payload.user_id:
-        user = await db.get(User, payload.user_id)
-        if user and user.username:
-            user_name = user.username
+    effective_user_id = current_user.id if current_user else payload.user_id
 
+    if current_user:
+        user_name = current_user.name or current_user.username or "member"
+    elif effective_user_id:
+        u = await db.get(User, effective_user_id)
+        if u:
+            user_name = u.name or u.username or "member"
+
+    if effective_user_id:
         # Get all interacted movies
         stmt = (
             select(Interaction, Movie)
             .join(Movie, Interaction.movie_id == Movie.id)
-            .where(Interaction.user_id == payload.user_id)
+            .where(Interaction.user_id == effective_user_id)
         )
         interactions = (await db.execute(stmt)).all()
 
@@ -122,6 +133,7 @@ async def curator_chat(payload: CuratorChatRequest, db: DBSession) -> Any:
                     user_genre_counter[g] += 1
 
         user_top_genres = [g for g, _ in user_genre_counter.most_common(3)]
+
 
     # ── 2. Parse Query Intent & Genre Tags ─────────────────────────────────────────
     matched_genres = set()

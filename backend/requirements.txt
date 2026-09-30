@@ -25,3 +25,7 @@ mlflow
 pytest
 pytest-asyncio
 httpx
+
+# Security & Authentication
+bcrypt
+pyjwt

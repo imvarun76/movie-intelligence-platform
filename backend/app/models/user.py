@@ -24,6 +24,35 @@ class User(Base):
         index=True,
     )
 
+    name: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
+    hashed_password: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    reset_token: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
+    reset_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     interaction_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -41,3 +70,4 @@ class User(Base):
         nullable=False,
         server_default=func.now(),
     )
+
