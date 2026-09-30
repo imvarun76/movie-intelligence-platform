@@ -390,7 +390,12 @@ export default function App() {
       {/* ── Top Header ── */}
       <header className="nav-header">
         <div className="nav-brand" onClick={() => { setActiveTab("films"); setShowIndex(false); }} title="ShowDyme — Movie Intelligence">
-          <img src="/showdyme-logo.png" alt="ShowDyme" className="showdyme-header-logo" />
+          <div className="showdyme-brand-lockup">
+            <img src="/showdyme-coin-gold.png" alt="ShowDyme" className="showdyme-emblem" />
+            <span className="showdyme-wordmark">
+              Show<span className="showdyme-wordmark-accent">Dyme</span>
+            </span>
+          </div>
         </div>
 
         <nav className="nav-menu">

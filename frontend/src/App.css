@@ -30,18 +30,51 @@
   cursor: pointer;
 }
 
-.showdyme-header-logo {
-  height: 42px;
-  width: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.15));
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+.showdyme-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
   user-select: none;
+  text-decoration: none;
 }
 
-.showdyme-header-logo:hover {
-  transform: scale(1.03);
-  filter: drop-shadow(0 0 22px rgba(212, 163, 89, 0.3));
+.showdyme-emblem {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 12px rgba(212, 163, 89, 0.4));
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
+}
+
+.showdyme-brand-lockup:hover .showdyme-emblem {
+  transform: rotate(6deg) scale(1.08);
+  filter: drop-shadow(0 4px 20px rgba(212, 163, 89, 0.65));
+}
+
+.showdyme-wordmark {
+  font-family: var(--font-serif);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F5E6CC 25%, #D4A359 60%, #AA7828 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-flex;
+  align-items: baseline;
+  filter: drop-shadow(0 1px 8px rgba(212, 163, 89, 0.25));
+  transition: filter 0.3s ease;
+}
+
+.showdyme-wordmark-accent {
+  font-weight: 700;
+  font-style: italic;
+  margin-left: 1px;
+}
+
+.showdyme-brand-lockup:hover .showdyme-wordmark {
+  filter: drop-shadow(0 2px 14px rgba(212, 163, 89, 0.5));
 }
 
 .a24-logo-text {
