@@ -139,6 +139,58 @@ async def record_interaction(
     )
 
 
+@router.delete("/{movie_id}")
+async def remove_interaction(
+    movie_id: int,
+    current_user: CurrentUser,
+    db: DBSession,
+    event_type: str | None = None,
+) -> Any:
+    """
+    Remove or toggle off an interaction (e.g. unmark watched, remove from archive).
+    If event_type is provided, removes only interactions of that type for the movie.
+    If event_type is omitted, removes all interactions for this movie by current user.
+    """
+    stmt = select(Interaction).where(
+        Interaction.user_id == current_user.id,
+        Interaction.movie_id == movie_id,
+    )
+    if event_type:
+        stmt = stmt.where(Interaction.event_type == event_type)
+
+    interactions = (await db.execute(stmt)).scalars().all()
+    if not interactions:
+        return {"success": True, "message": "No matching interaction found", "removed_count": 0}
+
+    count = len(interactions)
+    for inter in interactions:
+        await db.delete(inter)
+
+    user = current_user
+    if user.interaction_count >= count:
+        user.interaction_count -= count
+    else:
+        user.interaction_count = 0
+    user.cold_start_tier = compute_cold_start_tier(user.interaction_count)
+
+    await db.commit()
+
+    # Re-sync features
+    try:
+        await FeatureStoreService.compute_and_upsert_user_features(db, user.id)
+        await FeatureStoreService.compute_and_upsert_movie_features(db, movie_id)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "message": f"Successfully removed {count} interaction(s)",
+        "removed_count": count,
+        "movie_id": movie_id,
+        "event_type": event_type,
+        "cold_start_tier": user.cold_start_tier,
+    }
+
 
 async def _build_user_insights(user: User, db: DBSession) -> UserInsights:
     stmt = (

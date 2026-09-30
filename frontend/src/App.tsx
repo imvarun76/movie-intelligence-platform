@@ -251,11 +251,8 @@ export default function App() {
             is_disliked: act.event_type === "disliked",
             is_watchlist: act.event_type === "watchlist",
           };
-        } else {
-          if (act.event_type === "watched") map[act.movie_id].is_watched = true;
-          if (act.event_type === "liked") map[act.movie_id].is_liked = true;
-          if (act.event_type === "disliked") map[act.movie_id].is_disliked = true;
-          if (act.event_type === "watchlist") map[act.movie_id].is_watchlist = true;
+        } else if (act.event_type === "disliked") {
+          map[act.movie_id].is_disliked = true;
         }
       }
     }
@@ -655,7 +652,7 @@ export default function App() {
     }
   };
 
-  // Record Interaction
+  // Record or Toggle Interaction
   const handleInteraction = async (
     movieId: number,
     eventType: "watched" | "liked" | "disliked" | "watchlist"
@@ -665,6 +662,82 @@ export default function App() {
       return;
     }
 
+    const currentStatus = userInteractionsMap[movieId];
+    const isAlreadyActive =
+      (eventType === "watched" && currentStatus?.is_watched) ||
+      (eventType === "watchlist" && currentStatus?.is_watchlist) ||
+      (eventType === "liked" && currentStatus?.is_liked) ||
+      (eventType === "disliked" && currentStatus?.is_disliked);
+
+    if (isAlreadyActive) {
+      // ── TOGGLE OFF / UNCLICK / REMOVE FROM LIST ──
+      setArchiveItems((prev) => {
+        return prev
+          .map((item) => {
+            if (item.movie_id !== movieId) return item;
+            const updatedWatched = eventType === "watched" ? false : item.is_watched;
+            const updatedLiked = eventType === "liked" ? false : item.is_liked;
+            const updatedWatchlist = eventType === "watchlist" ? false : item.is_watchlist;
+            let updatedStatus = item.status;
+            if (item.status === eventType) {
+              if (updatedWatched) updatedStatus = "watched";
+              else if (updatedLiked) updatedStatus = "liked";
+              else if (updatedWatchlist) updatedStatus = "watchlist";
+              else updatedStatus = "";
+            }
+            return {
+              ...item,
+              is_watched: updatedWatched,
+              is_liked: updatedLiked,
+              is_watchlist: updatedWatchlist,
+              status: updatedStatus,
+            };
+          })
+          .filter((item) => {
+            if (item.movie_id !== movieId) return true;
+            return item.is_watched || item.is_liked || item.is_watchlist;
+          });
+      });
+
+      // Optimistically decrement insights counters & recent activity
+      setInsights((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          watched_count: eventType === "watched" ? Math.max(0, prev.watched_count - 1) : prev.watched_count,
+          liked_count: eventType === "liked" ? Math.max(0, prev.liked_count - 1) : prev.liked_count,
+          watchlist_count: eventType === "watchlist" ? Math.max(0, prev.watchlist_count - 1) : prev.watchlist_count,
+          disliked_count: eventType === "disliked" ? Math.max(0, prev.disliked_count - 1) : prev.disliked_count,
+          interaction_count: Math.max(0, prev.interaction_count - 1),
+          recent_activity: prev.recent_activity.filter(
+            (act) => !(act.movie_id === movieId && act.event_type === eventType)
+          ),
+        };
+      });
+
+      const unmarkLabels: Record<string, string> = {
+        watched: "Unmarked — Removed from Watched List",
+        liked: "Removed Like",
+        disliked: "Removed Dislike",
+        watchlist: "Removed from Watchlist",
+      };
+      showToast(unmarkLabels[eventType] || "Removed from list");
+
+      try {
+        const res = await authFetch(`${API_BASE}/api/v1/interactions/${movieId}?event_type=${eventType}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          refreshData();
+          fetchArchive(archiveFilter);
+        }
+      } catch {
+        showToast("Failed to update status");
+      }
+      return;
+    }
+
+    // ── TOGGLE ON / MARK ──
     // Optimistically update archiveItems so the button highlights with a tick immediately
     setArchiveItems((prev) => {
       const idx = prev.findIndex((item) => item.movie_id === movieId);
@@ -679,7 +752,10 @@ export default function App() {
         };
         return updated;
       }
-      const m = catalog.find((c) => c.id === movieId) || (featuredMovie?.id === movieId ? featuredMovie : null) || (selectedModalMovie?.id === movieId ? selectedModalMovie : null);
+      const m =
+        catalog.find((c) => c.id === movieId) ||
+        (featuredMovie?.id === movieId ? featuredMovie : null) ||
+        (selectedModalMovie?.id === movieId ? selectedModalMovie : null);
       const newItem: ArchiveItem = {
         movie_id: movieId,
         title: m?.title || "Movie",
@@ -1469,14 +1545,14 @@ export default function App() {
                           <button
                             className={`a24-btn-primary ${status.is_watched ? "is-watched-active" : ""}`}
                             onClick={() => handleInteraction(featuredMovie.id, "watched")}
-                            title={status.is_watched ? "Marked as Watched in Personal Archive" : "Mark as Watched"}
+                            title={status.is_watched ? "Marked as Watched • Click again to unmark" : "Mark as Watched"}
                           >
                             {status.is_watched ? "[ ✓ WATCHED ]" : "[ MARK WATCHED ]"}
                           </button>
                           <button
                             className={`a24-btn-secondary ${status.is_watchlist ? "is-watchlist-active" : ""}`}
                             onClick={() => handleInteraction(featuredMovie.id, "watchlist")}
-                            title={status.is_watchlist ? "In your Archive / Watchlist" : "Add to Archive"}
+                            title={status.is_watchlist ? "In your Archive • Click again to remove" : "+ Add to Archive"}
                           >
                             {status.is_watchlist ? "✓ IN ARCHIVE" : "+ ADD TO ARCHIVE"}
                           </button>
@@ -1485,7 +1561,7 @@ export default function App() {
                               className={`a24-btn-secondary ${status.is_liked ? "is-liked-active" : ""}`}
                               style={{ flex: 1 }}
                               onClick={() => handleInteraction(featuredMovie.id, "liked")}
-                              title={status.is_liked ? "Marked as Liked" : "Like this film"}
+                              title={status.is_liked ? "Liked • Click again to remove like" : "Like this film"}
                             >
                               {status.is_liked ? "✓ LIKED" : "LIKE"}
                             </button>
@@ -1493,7 +1569,7 @@ export default function App() {
                               className={`a24-btn-secondary ${status.is_disliked ? "is-disliked-active" : ""}`}
                               style={{ flex: 1 }}
                               onClick={() => handleInteraction(featuredMovie.id, "disliked")}
-                              title={status.is_disliked ? "Marked as Disliked" : "Dislike this film"}
+                              title={status.is_disliked ? "Disliked • Click again to remove dislike" : "Dislike this film"}
                             >
                               {status.is_disliked ? "✕ DISLIKED" : "DISLIKE"}
                             </button>
@@ -2073,21 +2149,21 @@ export default function App() {
                       <button
                         className={`a24-btn-primary ${modalStatus.is_watched ? "is-watched-active" : ""}`}
                         onClick={() => handleInteraction(selectedModalMovie.id, "watched")}
-                        title={modalStatus.is_watched ? "Marked as Watched in Personal Archive" : "Mark as Watched"}
+                        title={modalStatus.is_watched ? "Marked as Watched • Click again to unmark" : "Mark as Watched"}
                       >
                         {modalStatus.is_watched ? "[ ✓ WATCHED ]" : "[ MARK WATCHED ]"}
                       </button>
                       <button
                         className={`a24-btn-secondary ${modalStatus.is_liked ? "is-liked-active" : ""}`}
                         onClick={() => handleInteraction(selectedModalMovie.id, "liked")}
-                        title={modalStatus.is_liked ? "Marked as Liked" : "Like this film"}
+                        title={modalStatus.is_liked ? "Liked • Click again to remove like" : "Like this film"}
                       >
                         {modalStatus.is_liked ? "✓ LIKED" : "LIKE"}
                       </button>
                       <button
                         className={`a24-btn-secondary ${modalStatus.is_watchlist ? "is-watchlist-active" : ""}`}
                         onClick={() => handleInteraction(selectedModalMovie.id, "watchlist")}
-                        title={modalStatus.is_watchlist ? "In your Archive / Watchlist" : "Add to Archive"}
+                        title={modalStatus.is_watchlist ? "In your Archive • Click again to remove" : "+ Add to Watchlist"}
                       >
                         {modalStatus.is_watchlist ? "✓ IN ARCHIVE" : "+ ADD TO ARCHIVE"}
                       </button>
