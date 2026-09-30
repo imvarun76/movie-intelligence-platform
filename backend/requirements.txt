@@ -1,6 +1,26 @@
+# Web framework
 fastapi
 uvicorn[standard]
+
+# Database
 sqlalchemy[asyncio]
 psycopg[binary]
-pydantic-settings
 alembic
+
+# Settings / validation
+pydantic-settings
+pydantic
+
+# HTTP client
+httpx
+
+# Data processing / ML
+python-dotenv
+tenacity
+numpy
+scikit-learn
+
+# Dev / testing
+pytest
+pytest-asyncio
+httpx

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,46 @@ class Movie(Base):
 
     overview: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
+    )
+
+    poster_path: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+    )
+
+    backdrop_path: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+    )
+
+    tmdb_rating: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    tmdb_votes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    popularity: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    cast: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    directors: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    keywords: Mapped[list | None] = mapped_column(
+        JSONB,
         nullable=True,
     )
 

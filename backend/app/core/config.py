@@ -7,6 +7,21 @@ class Settings(BaseSettings):
 
     database_url: str
 
+    # TMDB
+    tmdb_api_key: str = ""
+
+    # OMDb (optional secondary source)
+    omdb_api_key: str = ""
+
+    # Redis (optional, for caching)
+    redis_url: str = ""
+
+    # OpenAI (for RAG/AI assistant)
+    openai_api_key: str = ""
+
+    # Frontend
+    frontend_url: str = "http://localhost:5173"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

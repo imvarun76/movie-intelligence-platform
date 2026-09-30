@@ -36,6 +36,12 @@ htmlcov/
 # Local data
 data/raw/
 data/processed/
+data/bronze/*
+!data/bronze/.gitkeep
+data/silver/*
+!data/silver/.gitkeep
+data/quarantine/*
+!data/quarantine/.gitkeep
 
 # Python tooling
 *.egg-info/
