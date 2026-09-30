@@ -84,8 +84,9 @@ class HybridRanker:
                 max_genre_ratio=max_genre_ratio,
                 exploration_rate=exploration_rate,
             )
-            if offset > 0 and len(ranked) > offset:
-                sliced = ranked[offset : offset + limit]
+            if offset > 0 and len(ranked) > 0:
+                effective_offset = offset % len(ranked)
+                sliced = ranked[effective_offset : effective_offset + limit]
                 if len(sliced) < limit and len(ranked) >= limit:
                     sliced += ranked[: limit - len(sliced)]
                 return sliced
@@ -177,8 +178,9 @@ class HybridRanker:
             exploration_rate=exploration_rate,
         )
 
-        if offset > 0 and len(final_ranked) > offset:
-            sliced = final_ranked[offset : offset + limit]
+        if offset > 0 and len(final_ranked) > 0:
+            effective_offset = offset % len(final_ranked)
+            sliced = final_ranked[effective_offset : effective_offset + limit]
             if len(sliced) < limit and len(final_ranked) >= limit:
                 sliced += final_ranked[: limit - len(sliced)]
             return sliced

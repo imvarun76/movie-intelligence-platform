@@ -581,10 +581,14 @@ export default function App() {
 
 
   // Fetch Feed & Insights
-  const refreshData = async () => {
+  const refreshData = async (options?: { preserveRecommendations?: boolean }) => {
     try {
+      const feedUrl = recsOffset > 0
+        ? `${API_BASE}/api/v1/recommendations?limit=12&offset=${recsOffset}&_t=${Date.now()}`
+        : `${API_BASE}/api/v1/recommendations?limit=12`;
+
       const [feedRes, insightsRes, catalogRes, mlopsRes, abRes, runsRes] = await Promise.all([
-        authFetch(`${API_BASE}/api/v1/recommendations?limit=12`),
+        options?.preserveRecommendations ? null : authFetch(feedUrl),
         authFetch(`${API_BASE}/api/v1/interactions/me/insights`),
         fetch(`${API_BASE}/api/v1/movies?page_size=100`),
         fetch(`${API_BASE}/api/v1/mlops/status`),
@@ -592,9 +596,17 @@ export default function App() {
         fetch(`${API_BASE}/api/v1/mlops/models/runs?limit=5`),
       ]);
 
-      if (feedRes.ok) {
+      if (feedRes && feedRes.ok) {
         const feedData = await feedRes.json();
-        setFeed(feedData);
+        setFeed((prev) => {
+          if (options?.preserveRecommendations && prev?.recommended_for_you) {
+            return {
+              ...feedData,
+              recommended_for_you: prev.recommended_for_you,
+            };
+          }
+          return feedData;
+        });
         if (!featuredMovie && feedData.recommended_for_you?.length > 0) {
           setFeaturedMovie(feedData.recommended_for_you[0]);
         }
@@ -732,7 +744,7 @@ export default function App() {
           method: "DELETE",
         });
         if (res.ok) {
-          refreshData();
+          refreshData({ preserveRecommendations: true });
           fetchArchive(archiveFilter);
         }
       } catch {
@@ -742,6 +754,17 @@ export default function App() {
     }
 
     // ── TOGGLE ON / MARK ──
+    // If marking as watched, immediately remove from the recommended selections view
+    if (eventType === "watched") {
+      setFeed((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recommended_for_you: prev.recommended_for_you.filter((m) => m.id !== movieId),
+        };
+      });
+    }
+
     // Optimistically update archiveItems so the button highlights with a tick immediately
     setArchiveItems((prev) => {
       const idx = prev.findIndex((item) => item.movie_id === movieId);
@@ -799,7 +822,7 @@ export default function App() {
           watchlist: "Bookmarked to Watchlist",
         };
         showToast(`${actionLabels[eventType]} • Tier: ${data.cold_start_tier.toUpperCase()}`);
-        refreshData();
+        refreshData({ preserveRecommendations: true });
         fetchArchive(archiveFilter);
       }
     } catch {
@@ -818,7 +841,10 @@ export default function App() {
       );
       if (res.ok) {
         const data = await res.json();
-        setFeed((prev) => (prev ? { ...prev, recommended_for_you: data.recommended_for_you } : data));
+        const unWatched = (data.recommended_for_you || []).filter(
+          (m: Movie) => !userInteractionsMap[m.id]?.is_watched
+        );
+        setFeed((prev) => (prev ? { ...prev, recommended_for_you: unWatched } : data));
         showToast("Curated new recommendations based on your archive");
       }
     } catch {
