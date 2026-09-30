@@ -48,6 +48,7 @@ class UserInsights(BaseModel):
     user_id: uuid.UUID
     interaction_count: int
     cold_start_tier: str
+    total_archive_count: int = 0
     watched_count: int
     liked_count: int
     disliked_count: int
@@ -90,20 +91,34 @@ async def record_interaction(
 
     user = current_user
 
-    # 2. Create interaction event
-    interaction = Interaction(
-        user_id=user.id,
-        movie_id=payload.movie_id,
-        event_type=payload.event_type,
-        value=payload.value,
-        source=payload.source,
-        event_metadata=payload.event_metadata,
+    # 2. Check if identical interaction already exists to prevent duplicate rows
+    existing_stmt = (
+        select(Interaction)
+        .where(Interaction.user_id == user.id)
+        .where(Interaction.movie_id == payload.movie_id)
+        .where(Interaction.event_type == payload.event_type)
     )
-    db.add(interaction)
+    existing_res = await db.execute(existing_stmt)
+    existing_interaction = existing_res.scalar_one_or_none()
 
-    # 3. Update user interaction count and cold-start tier
-    user.interaction_count += 1
-    user.cold_start_tier = compute_cold_start_tier(user.interaction_count)
+    if existing_interaction:
+        from datetime import datetime, timezone
+        existing_interaction.occurred_at = datetime.now(timezone.utc)
+        existing_interaction.value = payload.value
+        existing_interaction.source = payload.source
+        interaction = existing_interaction
+    else:
+        interaction = Interaction(
+            user_id=user.id,
+            movie_id=payload.movie_id,
+            event_type=payload.event_type,
+            value=payload.value,
+            source=payload.source,
+            event_metadata=payload.event_metadata,
+        )
+        db.add(interaction)
+        user.interaction_count += 1
+        user.cold_start_tier = compute_cold_start_tier(user.interaction_count)
 
     await db.commit()
     await db.refresh(interaction)
@@ -201,10 +216,12 @@ async def _build_user_insights(user: User, db: DBSession) -> UserInsights:
     )
     rows = (await db.execute(stmt)).all()
 
-    watched_count = sum(1 for i, _ in rows if i.event_type == "watched")
-    liked_count = sum(1 for i, _ in rows if i.event_type == "liked")
-    disliked_count = sum(1 for i, _ in rows if i.event_type == "disliked")
-    watchlist_count = sum(1 for i, _ in rows if i.event_type == "watchlist")
+    unique_archive_movie_ids = {i.movie_id for i, _ in rows if i.event_type in ["watched", "liked", "watchlist"]}
+    total_archive_count = len(unique_archive_movie_ids)
+    watched_count = len({i.movie_id for i, _ in rows if i.event_type == "watched"})
+    liked_count = len({i.movie_id for i, _ in rows if i.event_type == "liked"})
+    disliked_count = len({i.movie_id for i, _ in rows if i.event_type == "disliked"})
+    watchlist_count = len({i.movie_id for i, _ in rows if i.event_type == "watchlist"})
 
     # Aggregate genres from positive interactions
     genre_counter: Counter[str] = Counter()
@@ -234,6 +251,7 @@ async def _build_user_insights(user: User, db: DBSession) -> UserInsights:
         user_id=user.id,
         interaction_count=user.interaction_count,
         cold_start_tier=user.cold_start_tier,
+        total_archive_count=total_archive_count,
         watched_count=watched_count,
         liked_count=liked_count,
         disliked_count=disliked_count,

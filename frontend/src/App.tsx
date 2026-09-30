@@ -84,6 +84,7 @@ interface UserInsights {
   user_id: string;
   interaction_count: number;
   cold_start_tier: "new" | "sparse" | "mature";
+  total_archive_count?: number;
   watched_count: number;
   liked_count: number;
   disliked_count: number;
@@ -1765,7 +1766,7 @@ export default function App() {
           <div className="intelligence-header">
             <h1 className="intelligence-title">Personal Archive</h1>
             <p className="meta-label" style={{ marginTop: "8px" }}>
-              USER: {currentUser?.name || currentUser?.username || "MEMBER"} • {archiveItems.length} UNIQUE PRODUCTIONS LOGGED
+              USER: {currentUser?.name || currentUser?.username || "MEMBER"} • {insights?.total_archive_count ?? archiveItems.length} UNIQUE PRODUCTIONS LOGGED
             </p>
 
           </div>
@@ -1776,7 +1777,7 @@ export default function App() {
               className={`archive-filter-pill ${archiveFilter === "all" ? "active" : ""}`}
               onClick={() => setArchiveFilter("all")}
             >
-              All Records ({archiveItems.length})
+              All Records ({insights?.total_archive_count ?? archiveItems.length})
             </button>
             <button
               className={`archive-filter-pill ${archiveFilter === "watched" ? "active" : ""}`}
