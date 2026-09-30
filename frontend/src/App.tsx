@@ -139,6 +139,16 @@ export interface CuratorMovieCard {
   curator_rationale: string;
 }
 
+export interface CriticReview {
+  movie_id: number;
+  title: string;
+  publication: string;
+  author?: string | null;
+  quote: string;
+  stars: number;
+  consensus?: string | null;
+}
+
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 const API_BASE =
   (import.meta.env.VITE_API_URL as string) ||
@@ -176,6 +186,7 @@ export default function App() {
   const [featuredMovie, setFeaturedMovie] = useState<Movie | null>(null);
   const [selectedModalMovie, setSelectedModalMovie] = useState<Movie | null>(null);
   const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
+  const [criticReview, setCriticReview] = useState<CriticReview | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // Archive state
@@ -443,6 +454,27 @@ export default function App() {
     return EDITORIAL_QUOTES[featuredMovie.id % EDITORIAL_QUOTES.length];
   }, [featuredMovie]);
 
+  // Fetch real critic review when featured movie changes
+  useEffect(() => {
+    if (!featuredMovie) return;
+    let active = true;
+    const fetchReview = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/movies/${featuredMovie.id}/critic-review`);
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setCriticReview(data);
+        }
+      } catch (e) {
+        console.error("Failed to load critic review", e);
+      }
+    };
+    fetchReview();
+    return () => {
+      active = false;
+    };
+  }, [featuredMovie?.id]);
+
   // AI Curator RAG submit
   const handleAiSubmit = async (e?: React.FormEvent, directPrompt?: string) => {
     if (e) e.preventDefault();
@@ -663,6 +695,16 @@ export default function App() {
         <>
           {featuredMovie && (
             <section className="films-hero-section">
+              {/* Dynamic Atmospheric Backdrop Glow */}
+              {featuredMovie.backdrop_path && (
+                <div
+                  className="hero-ambient-backdrop"
+                  style={{
+                    backgroundImage: `url(${TMDB_IMAGE_BASE}/w1280${featuredMovie.backdrop_path})`,
+                  }}
+                />
+              )}
+
               <div className="editorial-hero-grid">
                 {/* Left Column: Dossier */}
                 <div className="dossier-left">
@@ -671,7 +713,7 @@ export default function App() {
                   <div className="meta-spec-block">
                     <span className="meta-label">DIRECTED BY</span>
                     <span className="meta-value">
-                      {featuredMovie.directors?.[0]?.name || "Visionary Independent Director"}
+                      {featuredMovie.directors?.[0]?.name || "Visionary Director"}
                     </span>
                   </div>
 
@@ -690,7 +732,7 @@ export default function App() {
                   <div className="meta-spec-block">
                     <span className="meta-label">GENRES & RUNTIME</span>
                     <span className="meta-value">
-                      {featuredMovie.genres?.join(", ") || "Cinema"} • {featuredMovie.runtime_minutes || 108}m
+                      {featuredMovie.genres?.join(", ") || "Cinema"} • {featuredMovie.runtime_minutes ? `${featuredMovie.runtime_minutes}m` : "Feature"}
                     </span>
                   </div>
 
@@ -709,7 +751,7 @@ export default function App() {
                   <div
                     className="vinyl-disc"
                     onClick={() => openMovieModal(featuredMovie)}
-                    title="Click for full film dossier"
+                    title="Click disc for full production dossier"
                   >
                     <div className="vinyl-center-label">
                       {featuredMovie.poster_path ? (
@@ -726,15 +768,24 @@ export default function App() {
                       <div className="spindle-hole" />
                     </div>
                   </div>
-                  <span className="disc-hint-label">CLICK DISC FOR PRODUCTION DOSSIER</span>
                 </div>
 
                 {/* Right Column: Quotes & Actions */}
                 <div className="editorial-right">
                   <div className="critic-quote-box">
-                    <div className="star-rating">★★★★★</div>
-                    <div className="quote-source">{editorialQuote.publication}</div>
-                    <p className="quote-text">"{editorialQuote.quote}"</p>
+                    <div className="star-rating">{"★".repeat(criticReview?.stars || 5)}</div>
+                    <div className="quote-source">
+                      <span>{criticReview?.publication || editorialQuote.publication}</span>
+                      {criticReview?.author && (
+                        <span className="critic-author-name">• {criticReview.author}</span>
+                      )}
+                    </div>
+                    <p className="quote-text">"{criticReview?.quote || editorialQuote.quote}"</p>
+                    {criticReview?.consensus && (
+                      <div className="critic-consensus-note">
+                        {criticReview.consensus}
+                      </div>
+                    )}
                   </div>
 
                   <div className="hero-action-stack">
