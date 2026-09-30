@@ -56,6 +56,13 @@ class MovieFeatureResponse(BaseModel):
     feature_version: str
 
 
+class SwitchMlopsModeRequest(BaseModel):
+    mode: str = Field(..., description="'local' or 'databricks'")
+    databricks_host: str | None = None
+    databricks_token: str | None = None
+    experiment_name: str | None = None
+
+
 @router.get("/status")
 async def get_mlops_status(db: DBSession) -> dict[str, Any]:
     """Get system health and metadata across Feature Store, A/B Testing, and MLflow."""
@@ -74,6 +81,7 @@ async def get_mlops_status(db: DBSession) -> dict[str, Any]:
 
     return {
         "phase": "Phase 6: Real-Time MLOps",
+        "mode": tracker.mode,
         "feature_store": {
             "movie_features_count": m_feat_count,
             "user_features_count": u_feat_count,
@@ -85,11 +93,25 @@ async def get_mlops_status(db: DBSession) -> dict[str, Any]:
             "total_telemetry_logs": ab_logs_count,
         },
         "mlflow": {
+            "mode": tracker.mode,
             "tracking_uri": tracker.tracking_uri,
             "experiment_name": tracker.experiment_name,
-            "backend": "Local SQLite / File Artifacts ($0 Free Local Option)",
+            "backend": "Azure Databricks Hosted MLflow" if tracker.mode == "databricks" else "Local SQLite / File Artifacts ($0 Free Local Option)",
         },
     }
+
+
+@router.post("/config/mode")
+async def switch_mlops_mode(payload: SwitchMlopsModeRequest) -> dict[str, Any]:
+    """Dynamically switch between $0 Free Local and Azure Databricks MLflow modes at runtime."""
+    tracker = get_mlflow_tracker()
+    result = tracker.switch_mode(
+        mode=payload.mode,
+        databricks_host=payload.databricks_host,
+        databricks_token=payload.databricks_token,
+        experiment_name=payload.experiment_name,
+    )
+    return {"status": "success", "config": result}
 
 
 @router.post("/features/sync", response_model=FeatureSyncResponse)

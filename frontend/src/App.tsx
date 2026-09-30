@@ -38,6 +38,7 @@ interface FeedResponse {
 
 interface MlopsStatus {
   phase: string;
+  mode?: string;
   feature_store: {
     movie_features_count: number;
     user_features_count: number;
@@ -230,6 +231,36 @@ export default function App() {
       showToast("Evaluation run failed");
     } finally {
       setIsEvaluating(false);
+    }
+  };
+
+  const handleSwitchMode = async (targetMode: "local" | "databricks") => {
+    let host = "";
+    let token = "";
+    if (targetMode === "databricks") {
+      const inputHost = window.prompt("Enter Azure Databricks Workspace URL (e.g. https://adb-12345.azuredatabricks.net):");
+      if (!inputHost) return;
+      host = inputHost.trim();
+      const inputToken = window.prompt("Enter Databricks Personal Access Token (dapi...):");
+      if (!inputToken) return;
+      token = inputToken.trim();
+    }
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/config/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: targetMode,
+          databricks_host: host || undefined,
+          databricks_token: token || undefined,
+        }),
+      });
+      if (res.ok) {
+        showToast(`Switched MLOps mode to: ${targetMode === "databricks" ? "Azure Databricks" : "Free Local ($0)"}`);
+        if (userId) refreshData(userId);
+      }
+    } catch {
+      showToast("Failed to switch MLOps mode");
     }
   };
 
@@ -832,7 +863,37 @@ export default function App() {
                   Real-Time Feature Store & Online Experimentation
                 </h3>
               </div>
-              <div style={{ display: "flex", gap: "10px" }}>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", border: "1px solid var(--border-line)", padding: "2px" }}>
+                  <button
+                    onClick={() => handleSwitchMode("local")}
+                    style={{
+                      background: mlopsStatus?.mode !== "databricks" ? "rgba(255,255,255,0.1)" : "transparent",
+                      border: "none",
+                      color: mlopsStatus?.mode !== "databricks" ? "var(--text-pure)" : "var(--text-muted)",
+                      padding: "6px 12px",
+                      fontSize: "0.72rem",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    ● Local Free ($0)
+                  </button>
+                  <button
+                    onClick={() => handleSwitchMode("databricks")}
+                    style={{
+                      background: mlopsStatus?.mode === "databricks" ? "rgba(100, 181, 246, 0.2)" : "transparent",
+                      border: "none",
+                      color: mlopsStatus?.mode === "databricks" ? "#64b5f6" : "var(--text-muted)",
+                      padding: "6px 12px",
+                      fontSize: "0.72rem",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    ☁ Databricks Cloud
+                  </button>
+                </div>
                 <button
                   className="a24-btn-secondary"
                   disabled={isSyncingFeatures}

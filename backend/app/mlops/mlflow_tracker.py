@@ -45,6 +45,7 @@ class MLflowTracker:
     ):
         self.tracking_uri = tracking_uri
         self.experiment_name = experiment_name
+        self.mode = "databricks" if "databricks" in tracking_uri.lower() else "local"
         self._setup()
 
     def _setup(self) -> None:
@@ -52,10 +53,38 @@ class MLflowTracker:
             mlflow.set_tracking_uri(self.tracking_uri)
             mlflow.set_experiment(self.experiment_name)
             self.client = MlflowClient(tracking_uri=self.tracking_uri)
-            logger.info(f"MLflow initialized with tracking URI: {self.tracking_uri}")
+            logger.info(f"MLflow initialized ({self.mode} mode) with URI: {self.tracking_uri}")
         except Exception as e:
             logger.warning(f"MLflow setup warning: {e}")
             self.client = None
+
+    def switch_mode(
+        self,
+        mode: str,
+        databricks_host: str | None = None,
+        databricks_token: str | None = None,
+        experiment_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Dynamically switch between $0 Local SQLite and Azure Databricks MLflow tracking."""
+        if mode.lower() == "databricks":
+            if databricks_host:
+                os.environ["DATABRICKS_HOST"] = databricks_host
+            if databricks_token:
+                os.environ["DATABRICKS_TOKEN"] = databricks_token
+            self.tracking_uri = "databricks"
+            self.experiment_name = experiment_name or os.getenv("MLFLOW_EXPERIMENT_NAME", "/Shared/movie_recommendation_v1")
+            self.mode = "databricks"
+        else:
+            self.tracking_uri = f"sqlite:///{DATA_DIR}/mlflow.db"
+            self.experiment_name = "movie_recommendation_v1"
+            self.mode = "local"
+
+        self._setup()
+        return {
+            "mode": self.mode,
+            "tracking_uri": self.tracking_uri,
+            "experiment_name": self.experiment_name,
+        }
 
     def log_run(
         self,
