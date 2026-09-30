@@ -100,6 +100,7 @@ interface UserInsights {
 }
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
+const API_BASE = (import.meta.env.VITE_API_URL as string) || "http://127.0.0.1:8000";
 
 // Curated critical reception quotes for A24 editorial style
 const EDITORIAL_QUOTES = [
@@ -144,16 +145,16 @@ export default function App() {
   >([
     {
       role: "curator",
-      text: "Welcome to the CinePulse A24 Intelligence Archive. Describe your cinematic mood or thematic interests, and I will recommend productions from our curated collection.",
+      text: "Welcome to the ShowDyme Intelligence Archive. Describe your cinematic mood or thematic interests, and I will recommend productions from our curated collection.",
     },
   ]);
 
   // Persistent user identity
   useEffect(() => {
-    let id = localStorage.getItem("cinepulse_user_id");
+    let id = localStorage.getItem("showdyme_user_id") || localStorage.getItem("cinepulse_user_id");
     if (!id) {
       id = "c8f12a34-5678-4321-9abc-def012345678";
-      localStorage.setItem("cinepulse_user_id", id);
+      localStorage.setItem("showdyme_user_id", id);
     }
     setUserId(id);
   }, []);
@@ -162,12 +163,12 @@ export default function App() {
   const refreshData = async (uid: string) => {
     try {
       const [feedRes, insightsRes, catalogRes, mlopsRes, abRes, runsRes] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/v1/recommendations?user_id=${uid}&limit=12`),
-        fetch(`http://127.0.0.1:8000/api/v1/interactions/user/${uid}/insights`),
-        fetch(`http://127.0.0.1:8000/api/v1/movies?page_size=100`),
-        fetch(`http://127.0.0.1:8000/api/v1/mlops/status`),
-        fetch(`http://127.0.0.1:8000/api/v1/mlops/experiments/recommender_hybrid_v1`),
-        fetch(`http://127.0.0.1:8000/api/v1/mlops/models/runs?limit=5`),
+        fetch(`${API_BASE}/api/v1/recommendations?user_id=${uid}&limit=12`),
+        fetch(`${API_BASE}/api/v1/interactions/user/${uid}/insights`),
+        fetch(`${API_BASE}/api/v1/movies?page_size=100`),
+        fetch(`${API_BASE}/api/v1/mlops/status`),
+        fetch(`${API_BASE}/api/v1/mlops/experiments/recommender_hybrid_v1`),
+        fetch(`${API_BASE}/api/v1/mlops/models/runs?limit=5`),
       ]);
 
       if (feedRes.ok) {
@@ -205,7 +206,7 @@ export default function App() {
   const handleSyncFeatures = async () => {
     setIsSyncingFeatures(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/features/sync", { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/v1/mlops/features/sync`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         showToast(`Feature Store: ${data.movies_synced} movies & ${data.users_synced} users synced`);
@@ -221,7 +222,7 @@ export default function App() {
   const handleRunOfflineEvaluation = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/models/evaluate?k=10", { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/v1/mlops/models/evaluate?k=10`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         showToast(`MLflow evaluation logged (Run: ${data.run_id?.slice(0, 8)})`);
@@ -246,7 +247,7 @@ export default function App() {
       token = inputToken.trim();
     }
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/config/mode", {
+      const res = await fetch(`${API_BASE}/api/v1/mlops/config/mode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -274,7 +275,7 @@ export default function App() {
   useEffect(() => {
     const fetchExplore = async () => {
       try {
-        let url = `http://127.0.0.1:8000/api/v1/movies?page_size=60`;
+        let url = `${API_BASE}/api/v1/movies?page_size=60`;
         if (searchQuery) url += `&q=${encodeURIComponent(searchQuery)}`;
         if (selectedGenre) url += `&genre=${encodeURIComponent(selectedGenre)}`;
         const res = await fetch(url);
@@ -292,7 +293,7 @@ export default function App() {
   // Similar movies for modal
   useEffect(() => {
     if (selectedModalMovie) {
-      fetch(`http://127.0.0.1:8000/api/v1/recommendations/similar/${selectedModalMovie.id}?limit=6`)
+      fetch(`${API_BASE}/api/v1/recommendations/similar/${selectedModalMovie.id}?limit=6`)
         .then((r) => r.json())
         .then((data) => setSimilarMovies(data))
         .catch(() => setSimilarMovies([]));
@@ -302,7 +303,7 @@ export default function App() {
   // Interactions
   const handleInteraction = async (movie: Movie, eventType: "watched" | "liked" | "disliked" | "watchlist") => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/interactions", {
+      const res = await fetch(`${API_BASE}/api/v1/interactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -356,7 +357,7 @@ export default function App() {
 
     try {
       const cleanQ = query.replace(/recommend|film|movie|show|like|find/gi, "").trim();
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/movies?q=${encodeURIComponent(cleanQ)}&page_size=3`);
+      const res = await fetch(`${API_BASE}/api/v1/movies?q=${encodeURIComponent(cleanQ)}&page_size=3`);
       let matches: Movie[] = [];
       if (res.ok) {
         const data = await res.json();
@@ -388,10 +389,8 @@ export default function App() {
     <div className="app-container">
       {/* ── Top Header ── */}
       <header className="nav-header">
-        <div className="nav-brand" onClick={() => { setActiveTab("films"); setShowIndex(false); }}>
-          <span className="a24-logo-text">A24</span>
-          <span className="brand-separator">/</span>
-          <span className="brand-sub">CinePulse</span>
+        <div className="nav-brand" onClick={() => { setActiveTab("films"); setShowIndex(false); }} title="ShowDyme — Movie Intelligence">
+          <img src="/showdyme-logo.png" alt="ShowDyme" className="showdyme-header-logo" />
         </div>
 
         <nav className="nav-menu">
@@ -547,7 +546,7 @@ export default function App() {
                         className="vinyl-poster-img"
                       />
                     ) : (
-                      <div style={{ color: "#888", textAlign: "center", paddingTop: "40px" }}>A24</div>
+                      <img src="/showdyme-coin.png" alt="ShowDyme" style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "50%" }} />
                     )}
                     <div className="spindle-hole" />
                   </div>
@@ -1033,7 +1032,7 @@ export default function App() {
               {chatMessages.map((msg, idx) => (
                 <div key={idx} style={{ alignSelf: msg.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
                   <div className="meta-label" style={{ marginBottom: "4px" }}>
-                    {msg.role === "user" ? "YOU" : "CINEPULSE CURATOR"}
+                    {msg.role === "user" ? "YOU" : "SHOWDYME CURATOR"}
                   </div>
                   <div style={{
                     padding: "14px 20px",

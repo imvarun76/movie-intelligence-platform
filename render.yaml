@@ -1,0 +1,25 @@
+services:
+  # ShowDyme FastAPI Backend Web Service (Free Tier)
+  - type: web
+    name: showdyme-api
+    runtime: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://showdyme.vercel.app
+      - key: TMDB_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: showdyme-db
+          property: connectionString
+
+databases:
+  # Free PostgreSQL Database with pgvector
+  - name: showdyme-db
+    plan: free
+    databaseName: movie_platform
+    user: postgres

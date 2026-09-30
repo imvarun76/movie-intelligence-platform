@@ -10,7 +10,7 @@ from backend.app.db import check_database_connection
 
 
 app = FastAPI(
-    title="Movie Intelligence Platform API",
+    title="ShowDyme Movie Intelligence Platform API",
     version="0.2.0",
     description="Personalized real-time movie intelligence and recommendation platform.",
 )
