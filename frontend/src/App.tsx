@@ -14,6 +14,8 @@ export interface Movie {
   tmdb_rating: number | null;
   popularity: number | null;
   overview?: string | null;
+  cast?: { name: string; character?: string }[] | null;
+  directors?: { name: string; job?: string }[] | null;
   score?: number | null;
   strategy?: string | null;
   reason?: string | null;
@@ -53,34 +55,47 @@ interface UserInsights {
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
-// ── Component ─────────────────────────────────────────────────────────────
+// Curated critical reception quotes for A24 editorial style
+const EDITORIAL_QUOTES = [
+  { publication: "The Playlist", quote: "Something Far More Haunting", stars: 5 },
+  { publication: "Variety", quote: "One Of The Year’s Masterpieces", stars: 5 },
+  { publication: "The Guardian", quote: "Thrilling Directness And Storytelling Force", stars: 5 },
+  { publication: "Rolling Stone", quote: "Storytelling Chops, Nerve And Verve", stars: 5 },
+  { publication: "The Daily Beast", quote: "Casts A Surrealistic Spell", stars: 5 },
+  { publication: "Time", quote: "Devastating In The Quietest Way", stars: 5 },
+  { publication: "Slashfilm", quote: "An Unforgettable, Hypnotic Triumph", stars: 5 },
+  { publication: "IndieWire", quote: "Visionary, Uncompromising Cinema", stars: 5 },
+];
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"home" | "explore" | "my-movies" | "insights" | "ai">("home");
+  const [activeTab, setActiveTab] = useState<"films" | "explore" | "archive" | "intelligence" | "ai">("films");
+  const [showIndex, setShowIndex] = useState(false);
   const [userId, setUserId] = useState<string>("");
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [insights, setInsights] = useState<UserInsights | null>(null);
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
+  const [catalog, setCatalog] = useState<Movie[]>([]);
+  const [featuredMovie, setFeaturedMovie] = useState<Movie | null>(null);
+  const [selectedModalMovie, setSelectedModalMovie] = useState<Movie | null>(null);
   const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
-  const [, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Explore page state
+  // Explore filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [exploreMovies, setExploreMovies] = useState<Movie[]>([]);
 
-  // AI Assistant state
+  // AI Assistant chat
   const [aiPrompt, setAiPrompt] = useState("");
   const [chatMessages, setChatMessages] = useState<
-    { role: "user" | "assistant"; text: string; movies?: Movie[] }[]
+    { role: "user" | "curator"; text: string; movies?: Movie[] }[]
   >([
     {
-      role: "assistant",
-      text: "Hello! I am your CinePulse AI assistant. Ask me to recommend movies based on themes, genres, moods, or titles you love!",
+      role: "curator",
+      text: "Welcome to the CinePulse A24 Intelligence Archive. Describe your cinematic mood or thematic interests, and I will recommend productions from our curated collection.",
     },
   ]);
 
-  // Initialize or fetch persistent User ID
+  // Persistent user identity
   useEffect(() => {
     let id = localStorage.getItem("cinepulse_user_id");
     if (!id) {
@@ -93,24 +108,29 @@ export default function App() {
   // Fetch Feed & Insights
   const refreshData = async (uid: string) => {
     try {
-      setLoading(true);
-      const [feedRes, insightsRes] = await Promise.all([
+      const [feedRes, insightsRes, catalogRes] = await Promise.all([
         fetch(`http://127.0.0.1:8000/api/v1/recommendations?user_id=${uid}&limit=12`),
         fetch(`http://127.0.0.1:8000/api/v1/interactions/user/${uid}/insights`),
+        fetch(`http://127.0.0.1:8000/api/v1/movies?page_size=100`),
       ]);
 
       if (feedRes.ok) {
         const feedData = await feedRes.json();
         setFeed(feedData);
+        if (!featuredMovie && feedData.recommended_for_you?.length > 0) {
+          setFeaturedMovie(feedData.recommended_for_you[0]);
+        }
       }
       if (insightsRes.ok) {
         const insightsData = await insightsRes.json();
         setInsights(insightsData);
       }
+      if (catalogRes.ok) {
+        const catalogData = await catalogRes.json();
+        setCatalog(catalogData.results);
+      }
     } catch (err) {
-      console.error("Failed to load recommendations:", err);
-    } finally {
-      setLoading(false);
+      console.error("Failed to load catalog:", err);
     }
   };
 
@@ -120,9 +140,9 @@ export default function App() {
     }
   }, [userId]);
 
-  // Fetch Explore Movies
+  // Explore search & filter
   useEffect(() => {
-    const fetchCatalog = async () => {
+    const fetchExplore = async () => {
       try {
         let url = `http://127.0.0.1:8000/api/v1/movies?page_size=60`;
         if (searchQuery) url += `&q=${encodeURIComponent(searchQuery)}`;
@@ -132,24 +152,24 @@ export default function App() {
           const data = await res.json();
           setExploreMovies(data.results);
         }
-      } catch (e) {
-        console.error("Failed to load explore catalog:", e);
+      } catch (err) {
+        console.error(err);
       }
     };
-    fetchCatalog();
+    fetchExplore();
   }, [searchQuery, selectedGenre]);
 
-  // Fetch Similar Movies when modal opens
+  // Similar movies for modal
   useEffect(() => {
-    if (selectedMovie) {
-      fetch(`http://127.0.0.1:8000/api/v1/recommendations/similar/${selectedMovie.id}?limit=6`)
+    if (selectedModalMovie) {
+      fetch(`http://127.0.0.1:8000/api/v1/recommendations/similar/${selectedModalMovie.id}?limit=6`)
         .then((r) => r.json())
         .then((data) => setSimilarMovies(data))
         .catch(() => setSimilarMovies([]));
     }
-  }, [selectedMovie]);
+  }, [selectedModalMovie]);
 
-  // Record Interaction
+  // Interactions
   const handleInteraction = async (movie: Movie, eventType: "watched" | "liked" | "disliked" | "watchlist") => {
     try {
       const res = await fetch("http://127.0.0.1:8000/api/v1/interactions", {
@@ -163,250 +183,396 @@ export default function App() {
       });
 
       if (res.ok) {
-        await res.json();
-        const actionLabels: Record<string, string> = {
-          watched: "Marked as Watched",
-          liked: "Added to Liked",
-          disliked: "Marked as Disliked",
-          watchlist: "Added to Watchlist",
+        const labels: Record<string, string> = {
+          watched: "Recorded as Watched",
+          liked: "Added to Favorites",
+          disliked: "Excluded from Recommendations",
+          watchlist: "Archived to Watchlist",
         };
-        showToast(`${actionLabels[eventType] || eventType}: "${movie.title}"`);
-        // Refresh personalized feed to show real-time adaptation
+        showToast(`${labels[eventType] || eventType}: "${movie.title}"`);
         refreshData(userId);
       }
-    } catch (err) {
+    } catch (e) {
       showToast("Error updating taste profile");
     }
   };
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3200);
+    setTimeout(() => setToast(null), 3000);
   };
 
-  // Extract all unique genres for filter pills
-  const allGenres = useMemo(() => {
-    const set = new Set<string>();
-    (feed?.trending_now || []).forEach((m) => m.genres?.forEach((g) => set.add(g)));
-    (feed?.recommended_for_you || []).forEach((m) => m.genres?.forEach((g) => set.add(g)));
-    return Array.from(set).slice(0, 14);
-  }, [feed]);
+  // Unique genres for filter
+  const genresList = useMemo(() => {
+    const s = new Set<string>();
+    catalog.forEach((m) => m.genres?.forEach((g) => s.add(g)));
+    return Array.from(s).slice(0, 12);
+  }, [catalog]);
 
-  // Hero movie
-  const heroMovie = feed?.trending_now?.[0] || feed?.recommended_for_you?.[0];
+  // Deterministic quote based on movie id
+  const currentQuote = useMemo(() => {
+    if (!featuredMovie) return EDITORIAL_QUOTES[0];
+    return EDITORIAL_QUOTES[featuredMovie.id % EDITORIAL_QUOTES.length];
+  }, [featuredMovie]);
 
-  // AI Chat handler
+  // AI submit
   const handleAiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiPrompt.trim()) return;
 
-    const userText = aiPrompt.trim();
+    const query = aiPrompt.trim();
     setAiPrompt("");
-    setChatMessages((prev) => [...prev, { role: "user", text: userText }]);
+    setChatMessages((prev) => [...prev, { role: "user", text: query }]);
 
-    // Query catalog with keywords
     try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/api/v1/movies?q=${encodeURIComponent(userText.replace(/recommend|find|movie|similar|like/gi, "").trim())}&page_size=3`
-      );
-      let matched: Movie[] = [];
+      const cleanQ = query.replace(/recommend|film|movie|show|like|find/gi, "").trim();
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/movies?q=${encodeURIComponent(cleanQ)}&page_size=3`);
+      let matches: Movie[] = [];
       if (res.ok) {
         const data = await res.json();
-        matched = data.results || [];
+        matches = data.results || [];
       }
-
-      if (matched.length === 0) {
-        // Fallback to top recommendation
-        matched = (feed?.recommended_for_you || []).slice(0, 3);
+      if (matches.length === 0) {
+        matches = (feed?.recommended_for_you || []).slice(0, 3);
       }
 
       setTimeout(() => {
         setChatMessages((prev) => [
           ...prev,
           {
-            role: "assistant",
-            text: `Based on your request "${userText}", here are top matches from our intelligence engine:`,
-            movies: matched,
+            role: "curator",
+            text: `Curated selections responding to your inquiry "${query}":`,
+            movies: matches,
           },
         ]);
-      }, 500);
-    } catch (err) {
+      }, 400);
+    } catch {
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", text: "I encountered an error querying the catalog. Please try again!" },
+        { role: "curator", text: "Unable to query the intelligence catalog at this time." },
       ]);
     }
   };
 
   return (
     <div className="app-container">
-      {/* ── Top Navigation ── */}
-      <header className="navbar">
-        <div className="nav-brand" onClick={() => setActiveTab("home")}>
-          <div className="brand-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z" />
-            </svg>
-          </div>
-          <span>Cine<span className="brand-accent">Pulse</span></span>
+      {/* ── Top Header ── */}
+      <header className="nav-header">
+        <div className="nav-brand" onClick={() => { setActiveTab("films"); setShowIndex(false); }}>
+          <span className="a24-logo-text">A24</span>
+          <span className="brand-separator">/</span>
+          <span className="brand-sub">CinePulse</span>
         </div>
 
-        <nav className="nav-links">
-          <button className={`nav-tab ${activeTab === "home" ? "active" : ""}`} onClick={() => setActiveTab("home")}>
-            Home
+        <nav className="nav-menu">
+          <button
+            className={`nav-item ${activeTab === "films" && !showIndex ? "active" : ""}`}
+            onClick={() => { setActiveTab("films"); setShowIndex(false); }}
+          >
+            Films
           </button>
-          <button className={`nav-tab ${activeTab === "explore" ? "active" : ""}`} onClick={() => setActiveTab("explore")}>
+          <button
+            className={`nav-item ${activeTab === "explore" && !showIndex ? "active" : ""}`}
+            onClick={() => { setActiveTab("explore"); setShowIndex(false); }}
+          >
             Explore
           </button>
-          <button className={`nav-tab ${activeTab === "my-movies" ? "active" : ""}`} onClick={() => setActiveTab("my-movies")}>
-            My Movies
+          <button
+            className={`index-btn ${showIndex ? "active" : ""}`}
+            onClick={() => setShowIndex(!showIndex)}
+          >
+            Index ▾
           </button>
-          <button className={`nav-tab ${activeTab === "insights" ? "active" : ""}`} onClick={() => setActiveTab("insights")}>
-            My Insights
+          <button
+            className={`nav-item ${activeTab === "archive" && !showIndex ? "active" : ""}`}
+            onClick={() => { setActiveTab("archive"); setShowIndex(false); }}
+          >
+            My Archive
           </button>
-          <button className={`nav-tab ${activeTab === "ai" ? "active" : ""}`} onClick={() => setActiveTab("ai")}>
-            AI Assistant
+          <button
+            className={`nav-item ${activeTab === "intelligence" && !showIndex ? "active" : ""}`}
+            onClick={() => { setActiveTab("intelligence"); setShowIndex(false); }}
+          >
+            Intelligence
+          </button>
+          <button
+            className={`nav-item ${activeTab === "ai" && !showIndex ? "active" : ""}`}
+            onClick={() => { setActiveTab("ai"); setShowIndex(false); }}
+          >
+            AI Curator
           </button>
         </nav>
 
-        <div className="nav-right">
-          <div className={`tier-badge ${insights?.cold_start_tier || "new"}`}>
-            <span className="pulse-dot"></span>
-            <span>{insights?.cold_start_tier || "new"} Tier ({insights?.interaction_count || 0})</span>
+        <div className="nav-right-meta">
+          <div className="tier-indicator">
+            <span className="active">●</span>
+            <span>{insights?.cold_start_tier || "new"} Tier [{insights?.interaction_count || 0}]</span>
           </div>
         </div>
       </header>
 
-      {/* ── Main Tab Content ── */}
-      {activeTab === "home" && (
+      {/* ── A24 Full Catalog Index Drawer ── */}
+      {showIndex && (
+        <div className="index-drawer">
+          <div className="index-drawer-header">
+            <h2 className="index-title">Production Index</h2>
+            <button className="a24-btn-secondary" onClick={() => setShowIndex(false)}>
+              [ Close Index ]
+            </button>
+          </div>
+          <div className="index-list-grid">
+            {catalog.map((film) => (
+              <div
+                key={film.id}
+                className="index-link-item"
+                onClick={() => {
+                  setFeaturedMovie(film);
+                  setShowIndex(false);
+                  setActiveTab("films");
+                }}
+              >
+                <span className="index-item-title">{film.title}</span>
+                <span className="index-item-year">{film.release_year || "2026"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Tab 1: Films Experience (A24 Disc Showcase + Curated Rails) ── */}
+      {activeTab === "films" && !showIndex && (
         <main>
-          {/* Hero Banner */}
-          {heroMovie && (
-            <section className="hero-banner">
-              <img
-                src={heroMovie.backdrop_path ? `${TMDB_IMAGE_BASE}/original${heroMovie.backdrop_path}` : `${TMDB_IMAGE_BASE}/w500${heroMovie.poster_path}`}
-                alt={heroMovie.title}
-                className="hero-backdrop"
-              />
-              <div className="hero-overlay" />
-              <div className="hero-content">
-                <div className="hero-badge">Featured Spotlight</div>
-                <h1 className="hero-title">{heroMovie.title}</h1>
-                <div className="hero-meta">
-                  <span className="rating">★ {heroMovie.tmdb_rating ? heroMovie.tmdb_rating.toFixed(1) : "N/A"}</span>
-                  <span>{heroMovie.release_year}</span>
-                  {heroMovie.runtime_minutes && <span>{heroMovie.runtime_minutes}m</span>}
-                  {heroMovie.genres?.map((g) => (
-                    <span key={g} className="genre-tag">{g}</span>
-                  ))}
+          {featuredMovie && (
+            <section className="a24-hero-experience">
+              {/* Left Column: Film Information */}
+              <div className="experience-info">
+                <h1 className="film-hero-title">{featuredMovie.title}</h1>
+
+                <div className="info-content-panel">
+                  <div className="meta-label">DIRECTED BY</div>
+                  <div className="info-row">
+                    <span></span>
+                    <span className="info-value">
+                      {featuredMovie.directors?.[0]?.name || "Visionary Independent Director"}
+                    </span>
+                  </div>
                 </div>
-                <p className="hero-overview">{heroMovie.overview || "An exceptional cinematic journey featured across our intelligence network."}</p>
-                <div className="hero-actions">
-                  <button className="glow-btn" onClick={() => setSelectedMovie(heroMovie)}>
-                    View Details
+
+                <div className="info-content-panel">
+                  <div className="meta-label">YEAR</div>
+                  <div className="info-row">
+                    <span></span>
+                    <span className="info-value">{featuredMovie.release_year || "2026"}</span>
+                  </div>
+                </div>
+
+                <div className="info-content-panel">
+                  <div className="meta-label">STARRING</div>
+                  <div className="info-row">
+                    <span></span>
+                    <span className="info-value">
+                      {featuredMovie.cast && featuredMovie.cast.length > 0
+                        ? featuredMovie.cast.slice(0, 2).map((c) => c.name).join(" • ")
+                        : "Ensemble Cast"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="info-content-panel">
+                  <div className="meta-label">GENRES & RUNTIME</div>
+                  <div className="info-row">
+                    <span></span>
+                    <span className="info-value">
+                      {featuredMovie.genres?.join(", ") || "Cinema"} {featuredMovie.runtime_minutes ? `• ${featuredMovie.runtime_minutes}m` : ""}
+                    </span>
+                  </div>
+                </div>
+
+                {featuredMovie.reason && (
+                  <div className="curator-note-box">
+                    <div className="meta-label">RECOMMENDATION RATIONALE</div>
+                    <p className="curator-note-text">"{featuredMovie.reason}"</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Center Column: Revolving Vinyl / Film Disc */}
+              <div className="experience-canvas-wrap">
+                <div
+                  className="vinyl-disc"
+                  onClick={() => setSelectedModalMovie(featuredMovie)}
+                  title="Click to view production dossier"
+                >
+                  <div className="vinyl-center-art">
+                    {featuredMovie.poster_path ? (
+                      <img
+                        src={`${TMDB_IMAGE_BASE}/w500${featuredMovie.poster_path}`}
+                        alt={featuredMovie.title}
+                        className="vinyl-poster-img"
+                      />
+                    ) : (
+                      <div style={{ color: "#888", textAlign: "center", paddingTop: "40px" }}>A24</div>
+                    )}
+                    <div className="spindle-hole" />
+                  </div>
+                </div>
+                <div className="disc-caption">Click Disc For Production Dossier</div>
+              </div>
+
+              {/* Right Column: Critical Acclaim & Editorial Controls */}
+              <div className="experience-acclaim">
+                <div className="testimonial-block">
+                  <div className="star-rating-row">
+                    {[...Array(currentQuote.stars)].map((_, i) => (
+                      <svg key={i} className="star-icon" viewBox="0 0 11 10">
+                        <path d="M5.24862 0L6.68508 3.53591L10.4972 3.81215L7.62431 6.29834L8.50829 10L5.24862 8.01105L1.98895 10L2.87293 6.29834L0 3.81215L3.81215 3.53591L5.24862 0Z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <div className="publication-name">{currentQuote.publication}</div>
+                  <div className="quote-text">"{currentQuote.quote}"</div>
+                </div>
+
+                <div className="editorial-btn-group">
+                  <button
+                    className="a24-btn-primary"
+                    onClick={() => handleInteraction(featuredMovie, "watched")}
+                  >
+                    [ Mark Watched ]
                   </button>
-                  <button className="ghost-btn" onClick={() => handleInteraction(heroMovie, "watchlist")}>
-                    + Add to Watchlist
+
+                  <button
+                    className="a24-btn-secondary"
+                    onClick={() => handleInteraction(featuredMovie, "watchlist")}
+                  >
+                    + Add To Archive
                   </button>
+
+                  <div className="editorial-btn-subgroup">
+                    <button
+                      className="a24-btn-secondary"
+                      onClick={() => handleInteraction(featuredMovie, "liked")}
+                    >
+                      Like
+                    </button>
+                    <button
+                      className="a24-btn-secondary"
+                      onClick={() => handleInteraction(featuredMovie, "disliked")}
+                    >
+                      Dislike
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
           )}
 
-          {/* Movie Rails */}
-          <div className="rails-container">
+          {/* ── Curated Editorial Rails (The Collection) ── */}
+          <div className="collection-section">
             {/* Recommended For You */}
-            <section className="movie-row">
-              <div className="row-header">
-                <div className="row-title-wrap">
-                  <h2 className="row-title">Recommended For You</h2>
-                  <span className="row-subtitle-badge">
-                    {insights?.cold_start_tier === "new" ? "Cold Start Popularity + Diversity" : `${insights?.cold_start_tier} Hybrid Ranking`}
-                  </span>
-                </div>
+            <div className="editorial-row">
+              <div className="editorial-row-header">
+                <h2 className="editorial-row-title">Recommended Selections</h2>
+                <span className="editorial-row-subtitle">
+                  {insights?.cold_start_tier === "new" ? "Cold Start Popularity & Exploration" : `${insights?.cold_start_tier} Hybrid Synthesis`}
+                </span>
               </div>
-              <div className="rail-cards">
-                {feed?.recommended_for_you.map((movie) => (
-                  <MovieCardComponent key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
+              <div className="editorial-cards-rail">
+                {feed?.recommended_for_you.map((m) => (
+                  <EditorialCard
+                    key={m.id}
+                    movie={m}
+                    onSelect={() => setFeaturedMovie(m)}
+                    onOpenModal={() => setSelectedModalMovie(m)}
+                  />
                 ))}
               </div>
-            </section>
+            </div>
 
-            {/* Because You Watched... (if user has watched movies) */}
+            {/* Because You Watched... */}
             {feed?.because_you_watched && (
-              <section className="movie-row">
-                <div className="row-header">
-                  <div className="row-title-wrap">
-                    <h2 className="row-title">Because You Watched "{feed.because_you_watched.source_movie_title}"</h2>
-                    <span className="row-subtitle-badge">Content Similarity</span>
-                  </div>
+              <div className="editorial-row">
+                <div className="editorial-row-header">
+                  <h2 className="editorial-row-title">
+                    Echoes of "{feed.because_you_watched.source_movie_title}"
+                  </h2>
+                  <span className="editorial-row-subtitle">Content Vector Affinity</span>
                 </div>
-                <div className="rail-cards">
-                  {feed.because_you_watched.movies.map((movie) => (
-                    <MovieCardComponent key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
+                <div className="editorial-cards-rail">
+                  {feed.because_you_watched.movies.map((m) => (
+                    <EditorialCard
+                      key={m.id}
+                      movie={m}
+                      onSelect={() => setFeaturedMovie(m)}
+                      onOpenModal={() => setSelectedModalMovie(m)}
+                    />
                   ))}
                 </div>
-              </section>
+              </div>
             )}
 
-            {/* Trending Now */}
-            <section className="movie-row">
-              <div className="row-header">
-                <div className="row-title-wrap">
-                  <h2 className="row-title">Trending Now</h2>
-                  <span className="row-subtitle-badge">High Velocity</span>
-                </div>
+            {/* Trending Productions */}
+            <div className="editorial-row">
+              <div className="editorial-row-header">
+                <h2 className="editorial-row-title">Contemporary Cinema</h2>
+                <span className="editorial-row-subtitle">Audience Velocity</span>
               </div>
-              <div className="rail-cards">
-                {feed?.trending_now.map((movie) => (
-                  <MovieCardComponent key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
+              <div className="editorial-cards-rail">
+                {feed?.trending_now.map((m) => (
+                  <EditorialCard
+                    key={m.id}
+                    movie={m}
+                    onSelect={() => setFeaturedMovie(m)}
+                    onOpenModal={() => setSelectedModalMovie(m)}
+                  />
                 ))}
               </div>
-            </section>
+            </div>
 
-            {/* Top Rated */}
-            <section className="movie-row">
-              <div className="row-header">
-                <div className="row-title-wrap">
-                  <h2 className="row-title">Critically Acclaimed</h2>
-                  <span className="row-subtitle-badge">Bayesian Weighted</span>
-                </div>
+            {/* Critically Acclaimed */}
+            <div className="editorial-row">
+              <div className="editorial-row-header">
+                <h2 className="editorial-row-title">Critical Acclaim</h2>
+                <span className="editorial-row-subtitle">Bayesian Evaluation</span>
               </div>
-              <div className="rail-cards">
-                {feed?.top_rated.map((movie) => (
-                  <MovieCardComponent key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
+              <div className="editorial-cards-rail">
+                {feed?.top_rated.map((m) => (
+                  <EditorialCard
+                    key={m.id}
+                    movie={m}
+                    onSelect={() => setFeaturedMovie(m)}
+                    onOpenModal={() => setSelectedModalMovie(m)}
+                  />
                 ))}
               </div>
-            </section>
+            </div>
           </div>
         </main>
       )}
 
-      {/* ── Explore Catalog Tab ── */}
-      {activeTab === "explore" && (
-        <div className="explore-container">
-          <div className="filter-bar">
-            <div className="search-input-wrap">
-              <span className="search-icon">🔍</span>
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search movies by title, director, or actor..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="genre-pills">
+      {/* ── Tab 2: Explore Catalog ── */}
+      {activeTab === "explore" && !showIndex && (
+        <div className="explore-editorial-view">
+          <div className="search-editorial-wrap">
+            <span className="meta-label">QUERY THE CATALOG</span>
+            <input
+              type="text"
+              className="search-editorial-input"
+              placeholder="Search by title, director, keyword..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="genre-filter-row">
               <button
-                className={`genre-pill ${selectedGenre === null ? "active" : ""}`}
+                className={`genre-btn ${selectedGenre === null ? "active" : ""}`}
                 onClick={() => setSelectedGenre(null)}
               >
                 All Genres
               </button>
-              {allGenres.map((g) => (
+              {genresList.map((g) => (
                 <button
                   key={g}
-                  className={`genre-pill ${selectedGenre === g ? "active" : ""}`}
+                  className={`genre-btn ${selectedGenre === g ? "active" : ""}`}
                   onClick={() => setSelectedGenre(selectedGenre === g ? null : g)}
                 >
                   {g}
@@ -415,37 +581,57 @@ export default function App() {
             </div>
           </div>
 
-          <div className="catalog-grid">
-            {exploreMovies.map((movie) => (
-              <MovieCardComponent key={movie.id} movie={movie} onClick={() => setSelectedMovie(movie)} />
+          <div className="editorial-grid">
+            {exploreMovies.map((m) => (
+              <EditorialCard
+                key={m.id}
+                movie={m}
+                onSelect={() => { setFeaturedMovie(m); setActiveTab("films"); }}
+                onOpenModal={() => setSelectedModalMovie(m)}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {/* ── My Movies Tab ── */}
-      {activeTab === "my-movies" && (
-        <div className="explore-container">
-          <h1 style={{ fontSize: "2rem", marginBottom: "16px" }}>My Saved & Watched Movies</h1>
+      {/* ── Tab 3: My Archive ── */}
+      {activeTab === "archive" && !showIndex && (
+        <div className="explore-editorial-view">
+          <div className="intelligence-header">
+            <h1 className="intelligence-title">Personal Archive</h1>
+            <p className="meta-label" style={{ marginTop: "8px" }}>
+              USER IDENTITY: {userId} • {insights?.interaction_count || 0} TOTAL RECORDS
+            </p>
+          </div>
+
           {insights?.recent_activity.length === 0 ? (
-            <p style={{ color: "var(--text-muted)" }}>No movie interactions yet! Browse the home feed and click "Watch" or "Like" to build your profile.</p>
+            <p style={{ color: "var(--text-muted)", padding: "40px 0" }}>
+              Your archive is empty. Select productions from the collection to log viewing activity.
+            </p>
           ) : (
-            <div className="catalog-grid">
+            <div className="editorial-grid">
               {insights?.recent_activity.map((act) => (
-                <div key={act.movie_id + act.event_type} className="movie-card" onClick={() => setSelectedMovie({ id: act.movie_id, title: act.movie_title, release_year: act.release_year, poster_path: act.poster_path } as any)}>
-                  <div className="poster-wrap">
+                <div
+                  key={act.movie_id + act.event_type}
+                  className="editorial-film-card"
+                  onClick={() => {
+                    const m = catalog.find((c) => c.id === act.movie_id);
+                    if (m) { setFeaturedMovie(m); setActiveTab("films"); }
+                  }}
+                >
+                  <div className="card-poster-frame">
                     {act.poster_path ? (
-                      <img src={`${TMDB_IMAGE_BASE}/w500${act.poster_path}`} alt={act.movie_title} className="movie-poster" />
+                      <img src={`${TMDB_IMAGE_BASE}/w500${act.poster_path}`} alt={act.movie_title} className="editorial-poster-img" />
                     ) : (
-                      <div style={{ padding: "40px 10px", textAlign: "center", color: "#666" }}>{act.movie_title}</div>
+                      <div style={{ padding: "40px", textAlign: "center", color: "#666" }}>{act.movie_title}</div>
                     )}
-                    <div className="card-reason-tag" style={{ textTransform: "capitalize" }}>{act.event_type}</div>
+                    <span className="card-score-pill" style={{ textTransform: "uppercase" }}>{act.event_type}</span>
                   </div>
-                  <div className="card-info">
-                    <div className="card-title">{act.movie_title}</div>
-                    <div className="card-meta">
-                      <span>{act.release_year}</span>
-                      <span style={{ color: "var(--accent-cyan)", textTransform: "capitalize" }}>{act.event_type}</span>
+                  <div className="card-meta-wrap">
+                    <div className="card-film-title">{act.movie_title}</div>
+                    <div className="card-film-sub">
+                      <span>{act.release_year || "2026"}</span>
+                      <span style={{ color: "var(--accent-gold)", textTransform: "uppercase" }}>{act.event_type}</span>
                     </div>
                   </div>
                 </div>
@@ -455,79 +641,76 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Insights Tab ── */}
-      {activeTab === "insights" && (
-        <div className="insights-container">
-          <div className="insights-header">
-            <h1 style={{ fontSize: "2.4rem", fontWeight: 800 }}>Your Taste Intelligence</h1>
-            <p style={{ color: "var(--text-secondary)" }}>Real-time machine learning profile, cold-start tier tracking, and taste vectors.</p>
+      {/* ── Tab 4: Taste Intelligence ── */}
+      {activeTab === "intelligence" && !showIndex && (
+        <div className="intelligence-view">
+          <div className="intelligence-header">
+            <h1 className="intelligence-title">Taste Profile Telemetry</h1>
+            <p className="meta-label" style={{ marginTop: "8px" }}>
+              Continuous real-time behavioral modeling & cold-start tier management
+            </p>
           </div>
 
-          {/* Tier Meter Card */}
-          <div className="tier-meter-card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="tier-progress-section">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <div>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 700 }}>Personalization Engine Status</h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
-                  Current Tier: <strong style={{ color: "var(--text-white)", textTransform: "uppercase" }}>{insights?.cold_start_tier}</strong> ({insights?.interaction_count || 0} interactions)
-                </p>
+                <span className="meta-label">CURRENT RECOMMENDATION TIER</span>
+                <h3 style={{ fontSize: "1.6rem", textTransform: "uppercase", marginTop: "4px" }}>
+                  {insights?.cold_start_tier} Tier
+                </h3>
               </div>
-              <div className={`tier-badge ${insights?.cold_start_tier || "new"}`}>
-                <span className="pulse-dot"></span>
-                <span>Active</span>
-              </div>
+              <span className="meta-label">
+                {insights?.interaction_count || 0} / 16 INTERACTIONS FOR MATURE COLLABORATIVE MATRIX
+              </span>
             </div>
 
-            <div className="meter-track">
+            <div className="progress-hairline-track">
               <div
-                className="meter-fill"
-                style={{
-                  width: `${Math.min(100, Math.max(12, ((insights?.interaction_count || 0) / 20) * 100))}%`,
-                }}
+                className="progress-hairline-fill"
+                style={{ width: `${Math.min(100, Math.max(8, ((insights?.interaction_count || 0) / 16) * 100))}%` }}
               />
             </div>
-            <div className="meter-labels">
-              <span>Tier 1: New (0 interactions)</span>
-              <span>Tier 2: Sparse (1–15 interactions)</span>
-              <span>Tier 3: Mature (15+ collaborative)</span>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.74rem", fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+              <span>Tier 1: New (Popularity + Diversity)</span>
+              <span>Tier 2: Sparse (Content Vectors)</span>
+              <span>Tier 3: Mature (Collaborative Filtering)</span>
             </div>
           </div>
 
-          {/* Stats Cards */}
-          <div className="insights-stats-grid">
-            <div className="stat-card">
-              <span className="stat-label">Total Interactions</span>
-              <span className="stat-value">{insights?.interaction_count || 0}</span>
+          <div className="intelligence-meta-panel">
+            <div className="meta-metric-card">
+              <span className="meta-label">TOTAL INTERACTIONS</span>
+              <span className="metric-val">{insights?.interaction_count || 0}</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-label">Watched Movies</span>
-              <span className="stat-value" style={{ color: "var(--accent-cyan)" }}>{insights?.watched_count || 0}</span>
+            <div className="meta-metric-card">
+              <span className="meta-label">WATCHED PRODUCTIONS</span>
+              <span className="metric-val">{insights?.watched_count || 0}</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-label">Liked Films</span>
-              <span className="stat-value" style={{ color: "var(--primary)" }}>{insights?.liked_count || 0}</span>
+            <div className="meta-metric-card">
+              <span className="meta-label">FAVORITED FILMS</span>
+              <span className="metric-val">{insights?.liked_count || 0}</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-label">Watchlist</span>
-              <span className="stat-value" style={{ color: "var(--accent-gold)" }}>{insights?.watchlist_count || 0}</span>
+            <div className="meta-metric-card">
+              <span className="meta-label">ARCHIVED TO WATCHLIST</span>
+              <span className="metric-val">{insights?.watchlist_count || 0}</span>
             </div>
           </div>
 
-          {/* Top Genres */}
-          <div className="stat-card">
-            <h3 style={{ fontSize: "1.1rem", marginBottom: "16px" }}>Top Preferred Genres</h3>
+          <div className="meta-metric-card" style={{ gridColumn: "span 4" }}>
+            <span className="meta-label" style={{ marginBottom: "12px" }}>DOMINANT GENRE DISTRIBUTION</span>
             {insights?.top_genres.length === 0 ? (
-              <p style={{ color: "var(--text-muted)" }}>Interact with movies to calculate your affinity distribution.</p>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No positive interactions logged yet to construct your genre distribution vector.</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {insights?.top_genres.map((g) => (
-                  <div key={g.genre} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>{g.genre}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "60%" }}>
-                      <div style={{ flex: 1, height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "4px", overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${Math.min(100, g.count * 25)}%`, background: "var(--primary)", borderRadius: "4px" }} />
+                  <div key={g.genre} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: "var(--font-serif)", fontSize: "1.1rem" }}>{g.genre}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "50%" }}>
+                      <div style={{ flex: 1, height: "1px", background: "var(--border-line)" }}>
+                        <div style={{ height: "100%", width: `${Math.min(100, g.count * 30)}%`, background: "var(--text-pure)" }} />
                       </div>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", width: "30px" }}>{g.count}</span>
+                      <span className="meta-label">{g.count}</span>
                     </div>
                   </div>
                 ))}
@@ -537,36 +720,45 @@ export default function App() {
         </div>
       )}
 
-      {/* ── AI Assistant Tab ── */}
-      {activeTab === "ai" && (
-        <div className="insights-container" style={{ maxWidth: "800px" }}>
-          <div className="insights-header">
-            <h1 style={{ fontSize: "2rem" }}>AI Conversational Discovery</h1>
-            <p style={{ color: "var(--text-secondary)" }}>Ask for personalized recommendations grounded in catalog metadata & semantic vector profiles.</p>
+      {/* ── Tab 5: AI Curator ── */}
+      {activeTab === "ai" && !showIndex && (
+        <div className="intelligence-view" style={{ maxWidth: "800px" }}>
+          <div className="intelligence-header">
+            <h1 className="intelligence-title">AI Film Curator</h1>
+            <p className="meta-label" style={{ marginTop: "8px" }}>
+              Grounded conversational query engine linked to catalog metadata & embeddings
+            </p>
           </div>
 
-          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", minHeight: "420px", display: "flex", flexDirection: "column" }}>
-            <div style={{ flex: 1, padding: "24px", display: "flex", flexDirection: "column", gap: "16px", overflowY: "auto", maxHeight: "480px" }}>
+          <div style={{ border: "1px solid var(--border-line)", minHeight: "440px", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, padding: "28px", display: "flex", flexDirection: "column", gap: "20px", overflowY: "auto", maxHeight: "480px" }}>
               {chatMessages.map((msg, idx) => (
                 <div key={idx} style={{ alignSelf: msg.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
+                  <div className="meta-label" style={{ marginBottom: "4px" }}>
+                    {msg.role === "user" ? "YOU" : "CINEPULSE CURATOR"}
+                  </div>
                   <div style={{
-                    padding: "12px 18px",
-                    borderRadius: "14px",
-                    background: msg.role === "user" ? "var(--primary)" : "var(--bg-card)",
-                    color: "white",
+                    padding: "14px 20px",
+                    border: "1px solid var(--border-line)",
+                    background: msg.role === "user" ? "var(--bg-card-hover)" : "var(--bg-surface)",
                     fontSize: "0.95rem",
-                    lineHeight: 1.5,
+                    lineHeight: 1.6,
+                    color: "var(--text-pure)",
                   }}>
                     {msg.text}
                   </div>
                   {msg.movies && (
-                    <div style={{ display: "flex", gap: "12px", marginTop: "12px", overflowX: "auto", paddingBottom: "6px" }}>
+                    <div style={{ display: "flex", gap: "16px", marginTop: "14px", overflowX: "auto" }}>
                       {msg.movies.map((m) => (
-                        <div key={m.id} style={{ width: "130px", flexShrink: 0, cursor: "pointer" }} onClick={() => setSelectedMovie(m)}>
+                        <div
+                          key={m.id}
+                          style={{ width: "130px", flexShrink: 0, cursor: "pointer" }}
+                          onClick={() => { setFeaturedMovie(m); setActiveTab("films"); }}
+                        >
                           {m.poster_path && (
-                            <img src={`${TMDB_IMAGE_BASE}/w300${m.poster_path}`} alt={m.title} style={{ width: "100%", borderRadius: "8px" }} />
+                            <img src={`${TMDB_IMAGE_BASE}/w300${m.poster_path}`} alt={m.title} style={{ width: "100%", border: "1px solid var(--border-line)" }} />
                           )}
-                          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginTop: "4px", color: "white" }}>{m.title}</div>
+                          <div style={{ fontFamily: "var(--font-serif)", fontSize: "0.9rem", marginTop: "6px" }}>{m.title}</div>
                         </div>
                       ))}
                     </div>
@@ -575,94 +767,90 @@ export default function App() {
               ))}
             </div>
 
-            <form onSubmit={handleAiSubmit} style={{ padding: "16px 20px", borderTop: "1px solid var(--border-subtle)", display: "flex", gap: "12px" }}>
+            <form onSubmit={handleAiSubmit} style={{ padding: "16px 20px", borderTop: "1px solid var(--border-line)", display: "flex", gap: "12px" }}>
               <input
                 type="text"
-                className="search-input"
-                style={{ height: "44px" }}
-                placeholder="e.g. Recommend a dark sci-fi thriller with great plot twists..."
+                className="search-editorial-input"
+                style={{ fontSize: "1.1rem", padding: "6px 0" }}
+                placeholder="Inquire: e.g. An atmospheric psychological thriller with existential themes..."
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
               />
-              <button type="submit" className="glow-btn" style={{ padding: "0 22px" }}>
-                Send
+              <button type="submit" className="a24-btn-primary" style={{ padding: "0 24px" }}>
+                Query
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── Movie Detail Modal ── */}
-      {selectedMovie && (
-        <div className="modal-backdrop" onClick={() => setSelectedMovie(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close-btn" onClick={() => setSelectedMovie(null)}>✕</button>
+      {/* ── Production Dossier Modal ── */}
+      {selectedModalMovie && (
+        <div className="a24-modal-backdrop" onClick={() => setSelectedModalMovie(null)}>
+          <div className="a24-modal-card" onClick={(e) => e.stopPropagation()}>
+            <span className="modal-close-icon" onClick={() => setSelectedModalMovie(null)}>[ CLOSE ]</span>
 
-            <div className="modal-hero">
+            <div className="modal-hero-frame">
               <img
-                src={selectedMovie.backdrop_path ? `${TMDB_IMAGE_BASE}/w1280${selectedMovie.backdrop_path}` : `${TMDB_IMAGE_BASE}/w500${selectedMovie.poster_path}`}
-                alt={selectedMovie.title}
-                className="modal-backdrop-img"
+                src={selectedModalMovie.backdrop_path ? `${TMDB_IMAGE_BASE}/w1280${selectedModalMovie.backdrop_path}` : `${TMDB_IMAGE_BASE}/w500${selectedModalMovie.poster_path}`}
+                alt={selectedModalMovie.title}
+                className="modal-hero-backdrop"
               />
-              <div className="modal-hero-overlay" />
             </div>
 
-            <div className="modal-body">
-              <div className="modal-title-row">
-                <h2 style={{ fontSize: "2rem", fontWeight: 800 }}>{selectedMovie.title}</h2>
-                <span style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>({selectedMovie.release_year})</span>
-              </div>
+            <div className="modal-content-wrap">
+              <h2 className="modal-film-title">{selectedModalMovie.title}</h2>
 
-              <div className="hero-meta">
-                <span className="rating">★ {selectedMovie.tmdb_rating ? selectedMovie.tmdb_rating.toFixed(1) : "N/A"}/10</span>
-                {selectedMovie.runtime_minutes && <span>{selectedMovie.runtime_minutes} mins</span>}
-                <span style={{ textTransform: "uppercase" }}>{selectedMovie.original_language}</span>
-                {selectedMovie.genres?.map((g) => (
-                  <span key={g} className="genre-tag">{g}</span>
-                ))}
-              </div>
-
-              {selectedMovie.reason && (
-                <div style={{ background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "10px 16px", borderRadius: "8px", color: "#a7f3d0", fontSize: "0.88rem" }}>
-                  💡 <strong>Recommendation rationale:</strong> {selectedMovie.reason}
+              <div className="modal-spec-grid">
+                <div>
+                  <div className="meta-label">DIRECTOR</div>
+                  <div style={{ marginTop: "4px" }}>{selectedModalMovie.directors?.[0]?.name || "Independent"}</div>
                 </div>
-              )}
+                <div>
+                  <div className="meta-label">YEAR & RUNTIME</div>
+                  <div style={{ marginTop: "4px" }}>{selectedModalMovie.release_year || "2026"} • {selectedModalMovie.runtime_minutes || "—"}m</div>
+                </div>
+                <div>
+                  <div className="meta-label">CRITICAL RATING</div>
+                  <div style={{ marginTop: "4px", color: "var(--accent-gold)" }}>★ {selectedModalMovie.tmdb_rating ? selectedModalMovie.tmdb_rating.toFixed(1) : "N/A"}/10</div>
+                </div>
+              </div>
 
-              <p style={{ lineHeight: 1.7, color: "#d1d5db" }}>
-                {selectedMovie.overview || "In-depth synopsis and production telemetry available in our multi-source movie intelligence registry."}
-              </p>
+              <p className="modal-synopsis">{selectedModalMovie.overview || "Official production dossier curated from our multi-source movie intelligence registry."}</p>
 
-              {/* Interaction Action Buttons */}
-              <div className="modal-actions">
-                <button className="glow-btn" onClick={() => handleInteraction(selectedMovie, "watched")}>
-                  ✓ Mark Watched
+              <div className="editorial-btn-group" style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                <button className="a24-btn-primary" onClick={() => handleInteraction(selectedModalMovie, "watched")}>
+                  [ Mark Watched ]
                 </button>
-                <button className="ghost-btn" onClick={() => handleInteraction(selectedMovie, "liked")}>
-                  👍 Like
+                <button className="a24-btn-secondary" onClick={() => handleInteraction(selectedModalMovie, "liked")}>
+                  Like
                 </button>
-                <button className="ghost-btn" onClick={() => handleInteraction(selectedMovie, "disliked")}>
-                  👎 Dislike
+                <button className="a24-btn-secondary" onClick={() => handleInteraction(selectedModalMovie, "disliked")}>
+                  Dislike
                 </button>
-                <button className="ghost-btn" onClick={() => handleInteraction(selectedMovie, "watchlist")}>
+                <button className="a24-btn-secondary" onClick={() => handleInteraction(selectedModalMovie, "watchlist")}>
                   + Watchlist
                 </button>
               </div>
 
-              {/* Similar Movies Row */}
+              {/* Similar Titles */}
               {similarMovies.length > 0 && (
-                <div style={{ marginTop: "16px" }}>
-                  <h4 style={{ fontSize: "1.1rem", marginBottom: "12px", color: "var(--text-white)" }}>Similar Titles (Content Embeddings)</h4>
-                  <div style={{ display: "flex", gap: "12px", overflowX: "auto", paddingBottom: "8px" }}>
+                <div style={{ borderTop: "1px solid var(--border-line)", paddingTop: "20px", marginTop: "10px" }}>
+                  <div className="meta-label" style={{ marginBottom: "12px" }}>RELATED PRODUCTIONS (CONTENT EMBEDDINGS)</div>
+                  <div style={{ display: "flex", gap: "14px", overflowX: "auto" }}>
                     {similarMovies.map((sim) => (
                       <div
                         key={sim.id}
-                        style={{ width: "120px", flexShrink: 0, cursor: "pointer" }}
-                        onClick={() => setSelectedMovie(sim)}
+                        style={{ width: "110px", flexShrink: 0, cursor: "pointer" }}
+                        onClick={() => {
+                          setSelectedModalMovie(sim);
+                          setFeaturedMovie(sim);
+                        }}
                       >
                         {sim.poster_path && (
-                          <img src={`${TMDB_IMAGE_BASE}/w300${sim.poster_path}`} alt={sim.title} style={{ width: "100%", borderRadius: "6px" }} />
+                          <img src={`${TMDB_IMAGE_BASE}/w300${sim.poster_path}`} alt={sim.title} style={{ width: "100%", border: "1px solid var(--border-line)" }} />
                         )}
-                        <div style={{ fontSize: "0.8rem", fontWeight: 600, marginTop: "4px", color: "var(--text-white)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <div style={{ fontFamily: "var(--font-serif)", fontSize: "0.85rem", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {sim.title}
                         </div>
                       </div>
@@ -675,39 +863,49 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Toast Notification ── */}
-      {toast && <div className="toast-notice">{toast}</div>}
+      {/* ── Toast ── */}
+      {toast && <div className="a24-toast">{toast}</div>}
     </div>
   );
 }
 
-// Sub-component for individual Movie Card
-function MovieCardComponent({ movie, onClick }: { movie: Movie; onClick: () => void }) {
+// ── Subcomponent: Editorial Card ──
+function EditorialCard({
+  movie,
+  onSelect,
+  onOpenModal,
+}: {
+  movie: Movie;
+  onSelect: () => void;
+  onOpenModal: () => void;
+}) {
   return (
-    <div className="movie-card" onClick={onClick}>
-      <div className="poster-wrap">
+    <div
+      className="editorial-film-card"
+      onClick={onSelect}
+      onDoubleClick={onOpenModal}
+      title={`${movie.title} (${movie.release_year}) — Click to view in Disc Player`}
+    >
+      <div className="card-poster-frame">
         {movie.poster_path ? (
-          <img src={`${TMDB_IMAGE_BASE}/w500${movie.poster_path}`} alt={movie.title} className="movie-poster" loading="lazy" />
+          <img
+            src={`${TMDB_IMAGE_BASE}/w500${movie.poster_path}`}
+            alt={movie.title}
+            className="editorial-poster-img"
+            loading="lazy"
+          />
         ) : (
-          <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "16px", color: "#666" }}>
-            {movie.title}
-          </div>
+          <div style={{ padding: "40px", textAlign: "center", color: "#555" }}>{movie.title}</div>
         )}
         {movie.tmdb_rating && (
-          <div className="card-rating-badge">
-            ★ {movie.tmdb_rating.toFixed(1)}
-          </div>
-        )}
-        {movie.reason && (
-          <div className="card-reason-tag" title={movie.reason}>
-            {movie.reason}
-          </div>
+          <span className="card-score-pill">★ {movie.tmdb_rating.toFixed(1)}</span>
         )}
       </div>
-      <div className="card-info">
-        <div className="card-title" title={movie.title}>{movie.title}</div>
-        <div className="card-meta">
-          <span>{movie.release_year || "—"}</span>
+
+      <div className="card-meta-wrap">
+        <h4 className="card-film-title">{movie.title}</h4>
+        <div className="card-film-sub">
+          <span>{movie.release_year || "2026"}</span>
           <span>{movie.genres?.[0] || "Film"}</span>
         </div>
       </div>
