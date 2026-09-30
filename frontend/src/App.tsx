@@ -24,6 +24,8 @@ export interface Movie {
 interface FeedResponse {
   user_id: string | null;
   cold_start_tier: "new" | "sparse" | "mature";
+  experiment_name?: string | null;
+  experiment_variant?: string | null;
   recommended_for_you: Movie[];
   trending_now: Movie[];
   top_rated: Movie[];
@@ -32,6 +34,49 @@ interface FeedResponse {
     source_movie_id: number;
     movies: Movie[];
   } | null;
+}
+
+interface MlopsStatus {
+  phase: string;
+  feature_store: {
+    movie_features_count: number;
+    user_features_count: number;
+    engine: string;
+    version: string;
+  };
+  ab_testing: {
+    registered_experiments: string[];
+    total_telemetry_logs: number;
+  };
+  mlflow: {
+    tracking_uri: string;
+    experiment_name: string;
+    backend: string;
+  };
+}
+
+interface ABExperimentMetrics {
+  experiment_name: string;
+  variants: Record<
+    string,
+    {
+      impressions: number;
+      conversions: number;
+      conversion_rate: number;
+      relative_lift_pct?: number;
+      events_breakdown?: Record<string, number>;
+    }
+  >;
+  generated_at: string;
+}
+
+interface MLflowRun {
+  run_id: string;
+  run_name: string;
+  status: string;
+  params: Record<string, any>;
+  metrics: Record<string, number>;
+  tags: Record<string, string>;
 }
 
 interface UserInsights {
@@ -84,6 +129,13 @@ export default function App() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [exploreMovies, setExploreMovies] = useState<Movie[]>([]);
 
+  // Phase 6 MLOps State
+  const [mlopsStatus, setMlopsStatus] = useState<MlopsStatus | null>(null);
+  const [abMetrics, setAbMetrics] = useState<ABExperimentMetrics | null>(null);
+  const [mlflowRuns, setMlflowRuns] = useState<MLflowRun[]>([]);
+  const [isSyncingFeatures, setIsSyncingFeatures] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+
   // AI Assistant chat
   const [aiPrompt, setAiPrompt] = useState("");
   const [chatMessages, setChatMessages] = useState<
@@ -108,10 +160,13 @@ export default function App() {
   // Fetch Feed & Insights
   const refreshData = async (uid: string) => {
     try {
-      const [feedRes, insightsRes, catalogRes] = await Promise.all([
+      const [feedRes, insightsRes, catalogRes, mlopsRes, abRes, runsRes] = await Promise.all([
         fetch(`http://127.0.0.1:8000/api/v1/recommendations?user_id=${uid}&limit=12`),
         fetch(`http://127.0.0.1:8000/api/v1/interactions/user/${uid}/insights`),
         fetch(`http://127.0.0.1:8000/api/v1/movies?page_size=100`),
+        fetch(`http://127.0.0.1:8000/api/v1/mlops/status`),
+        fetch(`http://127.0.0.1:8000/api/v1/mlops/experiments/recommender_hybrid_v1`),
+        fetch(`http://127.0.0.1:8000/api/v1/mlops/models/runs?limit=5`),
       ]);
 
       if (feedRes.ok) {
@@ -129,8 +184,52 @@ export default function App() {
         const catalogData = await catalogRes.json();
         setCatalog(catalogData.results);
       }
+      if (mlopsRes.ok) {
+        const mlopsData = await mlopsRes.json();
+        setMlopsStatus(mlopsData);
+      }
+      if (abRes.ok) {
+        const abData = await abRes.json();
+        setAbMetrics(abData);
+      }
+      if (runsRes.ok) {
+        const runsData = await runsRes.json();
+        setMlflowRuns(runsData);
+      }
     } catch (err) {
       console.error("Failed to load catalog:", err);
+    }
+  };
+
+  const handleSyncFeatures = async () => {
+    setIsSyncingFeatures(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/features/sync", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`Feature Store: ${data.movies_synced} movies & ${data.users_synced} users synced`);
+        if (userId) refreshData(userId);
+      }
+    } catch {
+      showToast("Feature sync failed");
+    } finally {
+      setIsSyncingFeatures(false);
+    }
+  };
+
+  const handleRunOfflineEvaluation = async () => {
+    setIsEvaluating(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/v1/mlops/models/evaluate?k=10", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`MLflow evaluation logged (Run: ${data.run_id?.slice(0, 8)})`);
+        if (userId) refreshData(userId);
+      }
+    } catch {
+      showToast("Evaluation run failed");
+    } finally {
+      setIsEvaluating(false);
     }
   };
 
@@ -304,6 +403,12 @@ export default function App() {
         </nav>
 
         <div className="nav-right-meta">
+          {feed?.experiment_variant && (
+            <div className="tier-indicator" style={{ borderColor: "rgba(212, 163, 89, 0.5)", color: "var(--accent-gold)" }}>
+              <span>EXP:</span>
+              <span style={{ fontWeight: 600 }}>{feed.experiment_variant}</span>
+            </div>
+          )}
           <div className="tier-indicator">
             <span className="active">●</span>
             <span>{insights?.cold_start_tier || "new"} Tier [{insights?.interaction_count || 0}]</span>
@@ -714,6 +819,138 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Phase 6: Real-Time MLOps & Experimentation ── */}
+          <div className="tier-progress-section" style={{ marginTop: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+              <div>
+                <span className="meta-label">PHASE 6 MLOPS & SYSTEM TELEMETRY</span>
+                <h3 style={{ fontSize: "1.4rem", textTransform: "uppercase", marginTop: "4px" }}>
+                  Real-Time Feature Store & Online Experimentation
+                </h3>
+              </div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  className="a24-btn-secondary"
+                  disabled={isSyncingFeatures}
+                  onClick={handleSyncFeatures}
+                  style={{ fontSize: "0.75rem", padding: "8px 14px" }}
+                >
+                  {isSyncingFeatures ? "[ Syncing Store... ]" : "[ Sync Feature Store ]"}
+                </button>
+                <button
+                  className="a24-btn-secondary"
+                  disabled={isEvaluating}
+                  onClick={handleRunOfflineEvaluation}
+                  style={{ fontSize: "0.75rem", padding: "8px 14px" }}
+                >
+                  {isEvaluating ? "[ Evaluating... ]" : "[ Run Offline Eval ]"}
+                </button>
+              </div>
+            </div>
+
+            {/* MLOps 3-column stats */}
+            <div className="intelligence-meta-panel" style={{ marginTop: "20px" }}>
+              <div className="meta-metric-card">
+                <span className="meta-label">FEATURE STORE CATALOG</span>
+                <span className="metric-val">{mlopsStatus?.feature_store.movie_features_count || 442}</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Active Movie Feature Rows
+                </span>
+              </div>
+              <div className="meta-metric-card">
+                <span className="meta-label">A/B EXPERIMENT</span>
+                <span className="metric-val" style={{ fontSize: "1.3rem", color: "var(--accent-gold)" }}>
+                  {feed?.experiment_variant || "control"}
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Assigned Variant (50/50 Split)
+                </span>
+              </div>
+              <div className="meta-metric-card">
+                <span className="meta-label">MLFLOW TRACKING</span>
+                <span className="metric-val" style={{ fontSize: "1.2rem" }}>
+                  {mlflowRuns.length} Runs
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  $0 Local SQLite / Artifacts
+                </span>
+              </div>
+              <div className="meta-metric-card">
+                <span className="meta-label">CLOUD TRIAL SHOWCASE</span>
+                <span className="metric-val" style={{ fontSize: "1.1rem", color: "#64b5f6" }}>
+                  Databricks
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  PySpark Delta & Streaming Ready
+                </span>
+              </div>
+            </div>
+
+            {/* Experiment Variants Comparison */}
+            {abMetrics && (
+              <div style={{ marginTop: "20px", borderTop: "1px solid var(--border-line)", paddingTop: "16px" }}>
+                <span className="meta-label">ACTIVE EXPERIMENT: recommender_hybrid_v1 (ONLINE CONVERSIONS)</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "12px" }}>
+                  {Object.entries(abMetrics.variants).map(([vName, vData]) => (
+                    <div
+                      key={vName}
+                      style={{
+                        padding: "16px",
+                        border: "1px solid var(--border-line)",
+                        background: vName === feed?.experiment_variant ? "rgba(212, 163, 89, 0.04)" : "transparent",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, textTransform: "uppercase" }}>
+                          Variant: {vName} {vName === feed?.experiment_variant ? "(Your Session)" : ""}
+                        </span>
+                        <span style={{ color: "var(--accent-gold)", fontSize: "0.85rem", fontFamily: "var(--font-mono)" }}>
+                          {vData.relative_lift_pct ? `${vData.relative_lift_pct > 0 ? "+" : ""}${vData.relative_lift_pct}% Lift` : "Baseline"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "20px", marginTop: "10px", fontSize: "0.8rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                        <div>Impressions: <strong style={{ color: "var(--text-pure)" }}>{vData.impressions}</strong></div>
+                        <div>Conversions: <strong style={{ color: "var(--text-pure)" }}>{vData.conversions}</strong></div>
+                        <div>Rate: <strong style={{ color: "var(--text-pure)" }}>{(vData.conversion_rate * 100).toFixed(1)}%</strong></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MLflow Offline Evaluation History */}
+            {mlflowRuns.length > 0 && (
+              <div style={{ marginTop: "20px", borderTop: "1px solid var(--border-line)", paddingTop: "16px" }}>
+                <span className="meta-label">RECENT MLFLOW OFFLINE EVALUATION RUNS</span>
+                <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {mlflowRuns.slice(0, 3).map((r) => (
+                    <div
+                      key={r.run_id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        border: "1px solid var(--border-line)",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <span>{r.run_name}</span>
+                      <div style={{ display: "flex", gap: "16px", color: "var(--text-muted)" }}>
+                        <span>NDCG@10: <strong style={{ color: "var(--text-pure)" }}>{r.metrics.ndcg_at_k ?? "0.0"}</strong></span>
+                        <span>Diversity: <strong style={{ color: "var(--text-pure)" }}>{r.metrics.intra_list_diversity ?? "0.0"}</strong></span>
+                        <span>Coverage: <strong style={{ color: "var(--text-pure)" }}>{((r.metrics.catalog_coverage ?? 0) * 100).toFixed(1)}%</strong></span>
+                        <span style={{ color: "var(--accent-gold)" }}>{r.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

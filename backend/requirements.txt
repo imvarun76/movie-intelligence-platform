@@ -19,6 +19,7 @@ python-dotenv
 tenacity
 numpy
 scikit-learn
+mlflow
 
 # Dev / testing
 pytest

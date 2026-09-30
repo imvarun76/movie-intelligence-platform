@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from backend.app.api.movies import DBSession
+from backend.app.mlops.ab_testing import get_experiment_engine
+from backend.app.mlops.feature_store import FeatureStoreService
 from backend.app.models.interaction import Interaction
 from backend.app.models.movie import Movie
 from backend.app.models.user import User
@@ -91,6 +93,25 @@ async def record_interaction(
 
     await db.commit()
     await db.refresh(interaction)
+
+    # 5. Real-Time Feature Store Sync (Phase 6 MLOps)
+    try:
+        await FeatureStoreService.compute_and_upsert_user_features(db, payload.user_id)
+        await FeatureStoreService.compute_and_upsert_movie_features(db, payload.movie_id)
+        
+        # 6. A/B Testing Telemetry Conversion Event
+        engine = get_experiment_engine()
+        variant = engine.assign_variant("recommender_hybrid_v1", payload.user_id)
+        await engine.log_event(
+            session=db,
+            experiment_name="recommender_hybrid_v1",
+            user_id=payload.user_id,
+            variant=variant.name,
+            conversion_event=payload.event_type,
+            value=payload.value,
+        )
+    except Exception:
+        pass  # Telemetry or background feature sync should not fail client response
 
     return InteractionResponse(
         id=interaction.id,

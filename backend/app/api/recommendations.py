@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.movies import DBSession
+from backend.app.mlops.ab_testing import get_experiment_engine
 from backend.app.models.interaction import Interaction
 from backend.app.models.movie import Movie
 from backend.app.recommendations.content_based import get_content_engine
@@ -43,6 +44,8 @@ class MovieCard(BaseModel):
 class RecommendationsFeed(BaseModel):
     user_id: str | None
     cold_start_tier: str
+    experiment_name: str | None = None
+    experiment_variant: str | None = None
     recommended_for_you: list[MovieCard]
     trending_now: list[MovieCard]
     top_rated: list[MovieCard]
@@ -81,29 +84,45 @@ async def get_feed(
         except ValueError:
             pass
 
-    # 1. Recommended For You (Hybrid Ranker)
-    if uid:
-        personalized = await HybridRanker.get_personalized_recommendations(
-            session=db,
-            user_id=uid,
-            limit=limit,
-        )
-    else:
-        # Default cold start (new tier)
-        dummy_uuid = uuid.uuid4()
-        personalized = await HybridRanker.get_personalized_recommendations(
-            session=db,
-            user_id=dummy_uuid,
-            limit=limit,
-        )
+    target_uuid = uid or uuid.uuid4()
 
-    # 2. Trending Now (high popularity)
+    # 1. A/B Experiment Assignment (Phase 6 MLOps)
+    engine = get_experiment_engine()
+    exp_name = "recommender_hybrid_v1"
+    variant = engine.assign_variant(exp_name, target_uuid)
+    exp_params = variant.params or {}
+    exploration_rate = float(exp_params.get("exploration_rate", 0.15))
+    max_genre_ratio = float(exp_params.get("max_genre_ratio", 0.35))
+
+    # Log impression event
+    if uid:
+        try:
+            await engine.log_event(
+                session=db,
+                experiment_name=exp_name,
+                user_id=uid,
+                variant=variant.name,
+                conversion_event="impression",
+            )
+        except Exception:
+            pass  # Do not block recommendation flow on telemetry errors
+
+    # 2. Recommended For You (Hybrid Ranker with variant parameters)
+    personalized = await HybridRanker.get_personalized_recommendations(
+        session=db,
+        user_id=target_uuid,
+        limit=limit,
+        exploration_rate=exploration_rate,
+        max_genre_ratio=max_genre_ratio,
+    )
+
+    # 3. Trending Now (high popularity)
     trending_items = await get_popular_movies(session=db, limit=limit)
 
-    # 3. Top Rated (high Bayesian rating)
+    # 4. Top Rated (high Bayesian rating)
     top_rated_items = await get_popular_movies(session=db, limit=limit)
 
-    # 4. Because You Watched... (if user has watched movies)
+    # 5. Because You Watched... (if user has watched movies)
     because_watched = None
     if uid:
         last_watched_stmt = (
@@ -139,6 +158,8 @@ async def get_feed(
     return RecommendationsFeed(
         user_id=str(uid) if uid else None,
         cold_start_tier=tier,
+        experiment_name=exp_name,
+        experiment_variant=variant.name,
         recommended_for_you=[_to_card(x) for x in personalized],
         trending_now=[_to_card(x) for x in trending_items],
         top_rated=[_to_card(x) for x in top_rated_items],

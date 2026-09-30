@@ -101,18 +101,20 @@ class TMDBClient:
     async def discover_movies(
         self,
         page: int = 1,
-        primary_release_date_lte: str = "2026-01-01",
+        primary_release_date_lte: str = "2026-10-01",
         sort_by: str = "popularity.desc",
+        **extra_params: Any,
     ) -> dict[str, Any]:
         """Discover movies with filters."""
-        return await self._get(
-            "/discover/movie",
-            page=page,
-            sort_by=sort_by,
-            include_adult=False,
-            include_video=False,
-            **{"primary_release_date.lte": primary_release_date_lte},
-        )
+        params = {
+            "page": page,
+            "sort_by": sort_by,
+            "include_adult": False,
+            "include_video": False,
+            "primary_release_date.lte": primary_release_date_lte,
+            **extra_params,
+        }
+        return await self._get("/discover/movie", **params)
 
     async def get_movie_details(self, tmdb_id: int) -> dict[str, Any]:
         """Fetch full movie details including credits and keywords."""
@@ -128,8 +130,9 @@ class TMDBClient:
     async def paginate_discover(
         self,
         max_pages: int | None = None,
-        primary_release_date_lte: str = "2026-01-01",
+        primary_release_date_lte: str = "2026-10-01",
         sort_by: str = "popularity.desc",
+        **extra_params: Any,
     ) -> list[dict[str, Any]]:
         """
         Iterate all pages of /discover/movie and return a flat list of results.
@@ -143,6 +146,7 @@ class TMDBClient:
             page=1,
             primary_release_date_lte=primary_release_date_lte,
             sort_by=sort_by,
+            **extra_params,
         )
         total_pages = min(first.get("total_pages", 1), 500)
         if max_pages is not None:

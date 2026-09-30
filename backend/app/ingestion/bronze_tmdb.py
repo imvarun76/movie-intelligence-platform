@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 BRONZE_DIR = Path("data/bronze/tmdb")
 QUARANTINE_DIR = Path("data/quarantine/tmdb")
-CUTOFF_DATE = "2026-01-01"
+CUTOFF_DATE = "2026-10-01"
 
 
 def _envelope(source: str, endpoint: str, data: Any, retrieved_at: str) -> dict:

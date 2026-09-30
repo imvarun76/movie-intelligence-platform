@@ -42,6 +42,8 @@ data/silver/*
 !data/silver/.gitkeep
 data/quarantine/*
 !data/quarantine/.gitkeep
+data/*.db
+data/mlruns/
 
 # Python tooling
 *.egg-info/

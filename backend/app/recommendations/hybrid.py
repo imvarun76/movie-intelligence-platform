@@ -47,6 +47,8 @@ class HybridRanker:
         session: AsyncSession,
         user_id: UUID,
         limit: int = 20,
+        exploration_rate: float = 0.15,
+        max_genre_ratio: float = 0.35,
     ) -> list[dict[str, Any]]:
         # 1. Fetch user & cold-start tier
         user = await session.get(User, user_id)
@@ -74,7 +76,8 @@ class HybridRanker:
                 ranked_candidates=popularity_pool,
                 exploration_pool=popularity_pool,
                 target_k=limit,
-                exploration_rate=0.15,
+                max_genre_ratio=max_genre_ratio,
+                exploration_rate=exploration_rate,
             )
             return ranked
 
@@ -154,8 +157,8 @@ class HybridRanker:
             ranked_candidates=blended,
             exploration_pool=popularity_pool,
             target_k=limit,
-            max_genre_ratio=0.35,
-            exploration_rate=0.15,
+            max_genre_ratio=max_genre_ratio,
+            exploration_rate=exploration_rate,
         )
 
         return final_ranked
