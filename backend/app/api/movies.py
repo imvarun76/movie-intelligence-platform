@@ -184,6 +184,15 @@ async def list_movies(
     )
 
 
+@router.post("/sync-catalog")
+async def trigger_catalog_sync() -> dict[str, Any]:
+    """Trigger synchronization of movies and external IDs from catalog seed."""
+    from backend.app.catalog_sync import sync_catalog_from_seed
+    res = await sync_catalog_from_seed()
+    return {"status": "success", "result": res}
+
+
+
 @router.get("/{movie_id}", response_model=MovieDetail)
 async def get_movie(movie_id: int, db: DBSession) -> Any:
     movie = await db.get(Movie, movie_id)

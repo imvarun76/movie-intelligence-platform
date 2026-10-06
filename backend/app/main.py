@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,15 +11,25 @@ from backend.app.api.mlops import router as mlops_router
 from backend.app.api.movies import router as movies_router
 from backend.app.api.recommendations import router as recommendations_router
 from backend.app.api.users import router as users_router
+from backend.app.catalog_sync import sync_catalog_from_seed
 from backend.app.core.config import settings
 from backend.app.db import check_database_connection
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Automatically synchronize catalog from seed if database is missing movies
+    asyncio.create_task(sync_catalog_from_seed())
+    yield
 
 
 app = FastAPI(
     title="ShowDyme Movie Intelligence Platform API",
     version="0.2.0",
     description="Personalized real-time movie intelligence and recommendation platform.",
+    lifespan=lifespan,
 )
+
 
 # CORS — allow development and production frontends
 allowed_origins = [

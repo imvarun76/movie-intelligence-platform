@@ -69,16 +69,15 @@ async def seed_neon(db_url: str):
     from backend.app.models.movie import Movie
     from backend.app.models.movie_external_id import MovieExternalID
     from backend.app.models.user import User
-    from backend.app.models.interaction import Interaction
-    from backend.app.ingestion.gold_sync import sync_silver_to_gold
+    from backend.app.catalog_sync import sync_catalog_from_seed
     from backend.app.mlops.feature_store import FeatureStoreService
 
     engine = create_async_engine(db_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    print("\n⏳ [Step 1/3] Ingesting all 442 movies from Silver Layer to Cloud Neon DB...")
-    upserted, errors = await sync_silver_to_gold(session_factory=session_factory)
-    print(f"✅ Silver-to-Gold Sync Finished: {upserted} movies upserted, {errors} errors.")
+    print("\n⏳ [Step 1/3] Ingesting all 1,651 curated movies from catalog seed to Cloud DB...")
+    res = await sync_catalog_from_seed(session_factory=session_factory)
+    print(f"✅ Catalog Seed Finished: {res.get('inserted')} movies inserted, {res.get('updated')} existing.")
 
     print("\n⏳ [Step 2/3] Seeding demo benchmark users and interactions...")
     async with session_factory() as session:
