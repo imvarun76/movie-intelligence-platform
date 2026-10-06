@@ -156,7 +156,40 @@ async def sync_catalog_from_seed(session_factory=None) -> dict[str, int]:
                 .values(title="Star Wars: Episode V - The Empire Strikes Back")
             )
 
+            # Guarantee Solo: A Star Wars Story is present
+            solo_check = await session.execute(
+                select(Movie.id).where(Movie.title.ilike("%Solo: A Star Wars%"))
+            )
+            if not solo_check.scalar_one_or_none():
+                solo_movie = Movie(
+                    title="Solo: A Star Wars Story",
+                    release_year=2018,
+                    genres=["Science Fiction", "Adventure", "Action"],
+                    original_language="en",
+                    runtime_minutes=135,
+                    poster_path="/4oD6VEccFkorEBTEDXtpLAaz0Rl.jpg",
+                    backdrop_path="/y9jGaGNn1dQDhPkhMumXaLize73.jpg",
+                    tmdb_rating=6.9,
+                    tmdb_votes=415316,
+                    popularity=15.8637,
+                    overview="Through a series of daring escapades deep within a dark and dangerous criminal underworld, Han Solo meets his mighty future copilot Chewbacca and encounters the notorious gambler Lando Calrissian.",
+                    cast=[
+                        {"name": "Alden Ehrenreich", "order": 0, "character": "Han Solo", "tmdb_person_id": 71375},
+                        {"name": "Joonas Suotamo", "order": 1, "character": "Chewbacca", "tmdb_person_id": 1709041},
+                        {"name": "Woody Harrelson", "order": 2, "character": "Tobias Beckett", "tmdb_person_id": 57755},
+                        {"name": "Emilia Clarke", "order": 3, "character": "Qi'ra", "tmdb_person_id": 1223786},
+                        {"name": "Donald Glover", "order": 4, "character": "Lando Calrissian", "tmdb_person_id": 119589},
+                    ],
+                    directors=[{"job": "Director", "name": "Ron Howard", "department": "Directing", "tmdb_person_id": 6159}],
+                )
+                session.add(solo_movie)
+                await session.flush()
+                session.add(MovieExternalID(movie_id=solo_movie.id, source="tmdb", external_id="348350"))
+                session.add(MovieExternalID(movie_id=solo_movie.id, source="imdb", external_id="tt3778644"))
+                inserted_count += 1
+
             await session.commit()
+
 
         logger.info(
             f"Catalog sync complete: {len(catalog)} total seed, {inserted_count} inserted, {updated_count} existing/updated."

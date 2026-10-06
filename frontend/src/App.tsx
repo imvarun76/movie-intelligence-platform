@@ -860,14 +860,14 @@ export default function App() {
   useEffect(() => {
     const fetchExplore = async () => {
       try {
-        let url = `${API_BASE}/api/v1/movies?page_size=60`;
+        let url = `${API_BASE}/api/v1/movies?page_size=60&_t=${Date.now()}`;
         if (searchQuery.trim()) {
           url += `&q=${encodeURIComponent(searchQuery.trim())}`;
         }
         if (selectedGenre) {
           url += `&genre=${encodeURIComponent(selectedGenre)}`;
         }
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           setExploreMovies(data.results);
@@ -876,6 +876,7 @@ export default function App() {
         console.error("Explore fetch failed", err);
       }
     };
+
 
     const timer = setTimeout(fetchExplore, 200);
     return () => clearTimeout(timer);
