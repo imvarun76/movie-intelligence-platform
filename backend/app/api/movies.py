@@ -192,6 +192,30 @@ async def trigger_catalog_sync() -> dict[str, Any]:
     return {"status": "success", "result": res}
 
 
+@router.post("/fix-titles")
+async def fix_franchise_titles(db: DBSession) -> dict[str, Any]:
+    """Immediately rename canonical Star Wars franchise titles in the database."""
+    from sqlalchemy import text
+    await db.execute(text("""
+        UPDATE movies 
+        SET title = 'Star Wars: Episode IV - A New Hope' 
+        WHERE title = 'Star Wars' AND release_year = 1977;
+    """))
+    await db.execute(text("""
+        UPDATE movies 
+        SET title = 'Star Wars: Episode V - The Empire Strikes Back' 
+        WHERE (title = 'The Empire Strikes Back' OR title ILIKE '%empire strikes%') AND release_year = 1980;
+    """))
+    await db.execute(text("""
+        UPDATE movies 
+        SET title = 'Star Wars: Episode VI - Return of the Jedi' 
+        WHERE title = 'Return of the Jedi' AND release_year = 1983;
+    """))
+    await db.commit()
+    return {"status": "success", "message": "Franchise titles normalized"}
+
+
+
 
 @router.get("/{movie_id}", response_model=MovieDetail)
 async def get_movie(movie_id: int, db: DBSession) -> Any:

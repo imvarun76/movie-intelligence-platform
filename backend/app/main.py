@@ -18,9 +18,25 @@ from backend.app.db import check_database_connection
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically synchronize catalog from seed if database is missing movies
-    asyncio.create_task(sync_catalog_from_seed())
+    # Normalize franchise titles and synchronize catalog from seed
+    async def _init_tasks():
+        try:
+            from sqlalchemy import text
+            from backend.app.db import async_session_factory
+            async with async_session_factory() as session:
+                await session.execute(text("""
+                    UPDATE movies SET title = 'Star Wars: Episode IV - A New Hope' WHERE title = 'Star Wars' AND release_year = 1977;
+                    UPDATE movies SET title = 'Star Wars: Episode V - The Empire Strikes Back' WHERE (title = 'The Empire Strikes Back' OR title ILIKE '%empire strikes%') AND release_year = 1980;
+                    UPDATE movies SET title = 'Star Wars: Episode VI - Return of the Jedi' WHERE title = 'Return of the Jedi' AND release_year = 1983;
+                """))
+                await session.commit()
+        except Exception:
+            pass
+        await sync_catalog_from_seed()
+
+    asyncio.create_task(_init_tasks())
     yield
+
 
 
 app = FastAPI(

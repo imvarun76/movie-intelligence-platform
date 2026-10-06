@@ -130,18 +130,27 @@ async def sync_catalog_from_seed(session_factory=None) -> dict[str, int]:
                                     )
                                     existing_ext_pairs[pair] = existing_id
 
-                            # Update rating / poster if incoming has it
+                            # Update title, release year, poster, and ratings to match catalog seed
+                            update_data = {
+                                "title": item["title"],
+                                "release_year": item.get("release_year"),
+                                "genres": item.get("genres"),
+                                "poster_path": item.get("poster_path"),
+                                "backdrop_path": item.get("backdrop_path"),
+                                "overview": item.get("overview"),
+                            }
                             if item.get("tmdb_rating") is not None:
-                                await session.execute(
-                                    update(Movie)
-                                    .where(Movie.id == existing_id)
-                                    .values(
-                                        tmdb_rating=item["tmdb_rating"],
-                                        tmdb_votes=item.get("tmdb_votes"),
-                                    )
-                                )
+                                update_data["tmdb_rating"] = item["tmdb_rating"]
+                                update_data["tmdb_votes"] = item.get("tmdb_votes")
+
+                            await session.execute(
+                                update(Movie)
+                                .where(Movie.id == existing_id)
+                                .values(**update_data)
+                            )
 
                             updated_count += 1
+
                 except Exception as e:
                     logger.warning(f"Error handling movie '{item.get('title')}': {e}")
                     continue
